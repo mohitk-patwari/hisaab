@@ -107,11 +107,8 @@ def parse(question: str) -> Intent | None:
     for i, user in enumerate(prompts):  # initial try + one retry, only on a parse failure
         try:
             raw = providers.complete(_SYSTEM, user, max_tokens=1000)
-        except providers.NotConfigured:
-            return _stub_parse(question)
-        except providers.LLMError:
-            providers.note_fallback()
-            return _stub_parse(question)
+        except (providers.NotConfigured, providers.LLMError):
+            return _stub_parse(question)  # complete() has already counted the failure
         result = _to_intent(raw)
         if result is not _PARSE_FAILED:
             return result  # Intent, or None (confident no-map) -- both are success

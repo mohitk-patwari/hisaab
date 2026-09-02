@@ -45,10 +45,8 @@ def narrate(explanation: Explanation) -> str:
         text = _llm(_SYSTEM, json.dumps(_payload(explanation))).strip()
         if text:
             return text
-    except providers.NotConfigured:
-        pass
-    except providers.LLMError:
-        providers.note_fallback()
+    except (providers.NotConfigured, providers.LLMError):
+        pass  # complete() has already counted the failure
     return _stub_narrate(explanation)
 
 

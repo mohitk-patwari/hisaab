@@ -149,8 +149,10 @@ def main(argv: list[str] | None = None) -> None:
     text = render_report(rep)
     text += (
         f"\nPath                        {providers.describe()}"
-        f"\nRate-limit fallbacks        {providers.fallback_count()}/{len(results)}"
-        " (LLM call failed after retries -> answered by the offline stub)\n"
+        f"\nRate-limit fallbacks        {providers.rate_limit_fallbacks()}/{len(results)}"
+        "   (429/5xx: retried, then stub)"
+        f"\nConfig-error fallbacks      {providers.config_errors()}/{len(results)}"
+        "   (4xx / empty response: not retried, see stderr)\n"
     )
     try:
         print(text)

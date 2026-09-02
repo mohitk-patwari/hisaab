@@ -6,15 +6,23 @@ The provider is chosen by HISAAB_LLM_PROVIDER; if unset, the first provider
 whose key is present wins; if none, "offline" (complete() raises NotConfigured).
 The decision is logged once, to stderr, on first use.
 
-    gemini    -> generativelanguage.googleapis.com   GEMINI_API_KEY     gemini-2.5-flash
-    anthropic -> api.anthropic.com/v1/messages       ANTHROPIC_API_KEY  claude-sonnet-4-6
-    groq      -> api.groq.com/openai/v1/chat/...     GROQ_API_KEY       llama-3.3-70b-versatile
+    gemini    -> generativelanguage.googleapis.com   GEMINI_API_KEY     gemini-3.6-flash   (GEMINI_MODEL)
+    anthropic -> api.anthropic.com/v1/messages       ANTHROPIC_API_KEY  claude-sonnet-4-6  (ANTHROPIC_MODEL)
+    groq      -> api.groq.com/openai/v1/chat/...     GROQ_API_KEY       llama-3.3-70b-versatile (GROQ_MODEL)
     offline   -> raises NotConfigured immediately
 
-httpx only, no SDKs. Retries a rate-limit / 5xx / transport error 3 times with
-1s / 2s backoff (4s cap), honouring Retry-After. HISAAB_LLM_DELAY_MS (default
-100) is slept before every request. A non-retryable failure raises LLMError;
-callers are expected to fall back to their own stub and call note_fallback().
+httpx only, no SDKs.
+
+Failure handling, split by cause:
+  - 429 / 5xx / network   -> transient: retry 3x with 1s/2s backoff (4s cap),
+                             honouring Retry-After; on final give-up, counted as
+                             a rate_limit_fallback.
+  - any other 4xx, or a
+    200 with no usable text -> permanent: NOT retried, the API's error message
+                             printed to stderr ONCE, counted as a config_error.
+Either way complete() raises LLMError and the caller drops to its own stub, so
+the run always finishes -- but a misconfiguration reads as a misconfiguration,
+not as throttling.
 """
 
 from __future__ import annotations
@@ -27,12 +35,11 @@ import httpx
 
 _TIMEOUT = 30.0
 _RETRY_DELAYS = (1.0, 2.0, 4.0)  # seconds to wait after a failed attempt; last is the cap
-_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 _MODEL = {
-    "gemini": os.getenv("HISAAB_GEMINI_MODEL", "gemini-2.5-flash"),
-    "anthropic": os.getenv("HISAAB_ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-    "groq": os.getenv("HISAAB_GROQ_MODEL", "llama-3.3-70b-versatile"),
+    "gemini": os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
+    "anthropic": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+    "groq": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
 }
 _KEY_ENV = {"gemini": "GEMINI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "groq": "GROQ_API_KEY"}
 
@@ -42,25 +49,43 @@ class NotConfigured(RuntimeError):
 
 
 class LLMError(RuntimeError):
-    """The configured provider failed and will not be retried further."""
+    """The configured provider did not return a usable completion."""
+
+
+class ConfigError(LLMError):
+    """Permanent failure -- bad model id, bad key, bad request, empty response.
+    Not retried; the API's message is surfaced once, loudly."""
 
 
 class _Retryable(Exception):
+    """Transient HTTP failure (429 / 5xx)."""
+
     def __init__(self, status: int, retry_after: float | None):
         super().__init__(f"HTTP {status}")
         self.retry_after = retry_after
 
 
+def _api_message(r: httpx.Response) -> str:
+    try:
+        err = r.json().get("error")
+        msg = err.get("message") if isinstance(err, dict) else err
+        if msg:
+            return f"HTTP {r.status_code}: {msg}"
+    except Exception:
+        pass
+    return f"HTTP {r.status_code}: {r.text[:300]}"
+
+
 def _check(r: httpx.Response) -> None:
     if r.status_code == 200:
         return
-    if r.status_code in _RETRYABLE_STATUS:
+    if r.status_code == 429 or r.status_code >= 500:
         ra = r.headers.get("retry-after", "")
         raise _Retryable(r.status_code, float(ra) if ra.replace(".", "", 1).isdigit() else None)
-    raise LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
+    raise ConfigError(_api_message(r))  # 400/401/403/404/... -- permanent
 
 
-# --- adapters: (system, user, max_tokens, key) -> text; raise _Retryable / httpx / LLMError
+# --- adapters: (system, user, max_tokens, key) -> text; raise _Retryable / httpx / ConfigError
 
 def _gemini(system: str, user: str, max_tokens: int, key: str) -> str:
     r = httpx.post(
@@ -69,19 +94,19 @@ def _gemini(system: str, user: str, max_tokens: int, key: str) -> str:
         json={
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,
-                "temperature": 0,
-                "thinkingConfig": {"thinkingBudget": 0},  # flash 2.5: skip thinking, it's a router call
-            },
+            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0},
         },
         timeout=_TIMEOUT,
     )
     _check(r)
+    # gemini-3.6-flash interleaves reasoning parts: a part may carry only a
+    # "thoughtSignature" and no "text" key. Never index parts[0]; take every
+    # part that actually has text. Tolerate no candidates / no content key.
     cands = r.json().get("candidates") or []
     if not cands:
-        raise LLMError(f"gemini: no candidates: {r.text[:200]}")
-    return "".join(p.get("text", "") for p in cands[0].get("content", {}).get("parts", []))
+        return ""
+    parts = (cands[0].get("content") or {}).get("parts") or []
+    return "".join(p["text"] for p in parts if isinstance(p, dict) and "text" in p)
 
 
 def _anthropic(system: str, user: str, max_tokens: int, key: str) -> str:
@@ -116,7 +141,7 @@ def _groq(system: str, user: str, max_tokens: int, key: str) -> str:
         timeout=_TIMEOUT,
     )
     _check(r)
-    return r.json()["choices"][0]["message"]["content"] or ""
+    return (r.json().get("choices") or [{}])[0].get("message", {}).get("content") or ""
 
 
 _ADAPTERS = {"gemini": _gemini, "anthropic": _anthropic, "groq": _groq}
@@ -126,7 +151,9 @@ _ADAPTERS = {"gemini": _gemini, "anthropic": _anthropic, "groq": _groq}
 _forced_offline = False
 _resolved: tuple[str, str] | None = None  # (kind, human description)
 _logged = False
-_fallbacks = 0
+_rate_limit_fallbacks = 0
+_config_errors = 0
+_config_error_logged = False
 
 
 def force_offline(value: bool = True) -> None:
@@ -182,13 +209,29 @@ def is_offline() -> bool:
     return _resolve()[0] == "offline"
 
 
-def note_fallback() -> None:
-    global _fallbacks
-    _fallbacks += 1
+def rate_limit_fallbacks() -> int:
+    return _rate_limit_fallbacks
 
 
-def fallback_count() -> int:
-    return _fallbacks
+def config_errors() -> int:
+    return _config_errors
+
+
+def _bump_rate_limit() -> None:
+    global _rate_limit_fallbacks
+    _rate_limit_fallbacks += 1
+
+
+def _bump_config_error(exc: Exception) -> None:
+    global _config_errors, _config_error_logged
+    _config_errors += 1
+    if not _config_error_logged:
+        print(
+            f"\n[hisaab] LLM CONFIG ERROR -- not retrying; every question now answered by the "
+            f"regex stub:\n    {exc}\n",
+            file=sys.stderr,
+        )
+        _config_error_logged = True
 
 
 def _delay_s() -> float:
@@ -212,11 +255,15 @@ def complete(system: str, user: str, max_tokens: int = 1000) -> str:
         try:
             text = adapter(system, user, max_tokens, key)
             if not text.strip():
-                raise LLMError("empty completion")
+                raise ConfigError(f"{kind}: 200 OK but no text in the response (model {_MODEL[kind]!r})")
             return text
-        except (_Retryable, httpx.TransportError) as exc:  # rate limit / 5xx / network
+        except ConfigError as exc:  # permanent -- bad model / key / body / empty
+            _bump_config_error(exc)
+            raise
+        except (_Retryable, httpx.TransportError) as exc:  # transient -- rate limit / 5xx / network
             last = exc
             if i < len(_RETRY_DELAYS) - 1:
                 time.sleep(getattr(exc, "retry_after", None) or delay)
-        # LLMError (4xx, empty, malformed) is not retryable -> propagate to the caller's stub
+
+    _bump_rate_limit()
     raise LLMError(f"{kind}: gave up after {len(_RETRY_DELAYS)} attempts ({last})")

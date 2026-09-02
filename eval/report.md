@@ -73,4 +73,5 @@ UNRESOLVED EXCEPTIONS (60):
   Q0300  "which city were the payments in settlement stl_0100 from"  -> question did not map to a known query
 
 Path                        OFFLINE: regex stub (--offline)
-Rate-limit fallbacks        0/300 (LLM call failed after retries -> answered by the offline stub)
+Rate-limit fallbacks        0/300   (429/5xx: retried, then stub)
+Config-error fallbacks      0/300   (4xx / empty response: not retried, see stderr)

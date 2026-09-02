@@ -329,9 +329,102 @@ python -m eval.run --seed 42 --questions eval/questions.yaml --limit 20 # 20-que
 | Rate-limit fallbacks | 0/300 | _pending_ |
 | of the 23 known misroutes, fixed by the LLM | — (baseline) | _pending_ |
 
-**Why pending:** no `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` / `GROQ_API_KEY` was
-available in this session. Provider plumbing is verified against all three live
-endpoints — each accepts the request body and rejects only on the bogus key
-(HTTP 401/400 `authentication_error`), and the non-retryable path fast-fails as
-designed. The moment a key is in `.env`, the first command above fills the LLM
-column and the ablation delta is the two columns side by side.
+**Why pending:** no key was available when the table was first written; a key
+was added next session and the Gemini path then failed for two further reasons —
+a stale default model, then a 20-request/day free quota. See the next entry.
+
+## Gemini smoke test: 40/20 "rate-limit" fallbacks that were not rate limits (2026-09-03)
+
+**Symptom.** First real LLM run — `python -m eval.run --seed 42 --limit 20`
+with `HISAAB_LLM_PROVIDER=gemini` — every one of the 40 calls (20 questions ×
+intent + narrate) fell through to the offline stub. The report read
+`Rate-limit fallbacks 40/20`, mean latency 2330 ms, `Path LLM:
+gemini/gemini-2.5-flash`. It looked like free-tier throttling.
+
+**Root cause (found by curl, not by the counter).** Not throttling — a stale
+model id. `models/gemini-2.5-flash` is gone:
+
+```
+$ curl "…/models/gemini-2.5-flash:generateContent?key=$K" \
+       -d '{"contents":[{"parts":[{"text":"ping"}]}]}'
+HTTP 404
+"This model models/gemini-2.5-flash is no longer available to new users.
+ Please update your code to use models/gemini-3.6-flash"
+
+$ curl "…/models/gemini-3.6-flash:generateContent?key=$K" -d '…'
+HTTP 200   # gemini-3.6-flash works
+```
+
+The 2330 ms / call confirmed there was **no retry storm**: one ~1.1 s 404 per
+call, not three with backoff. `_check` already classed non-{429,5xx} as a
+non-retryable `LLMError`. What actually failed was *diagnosis* — there was a
+single undifferentiated `fallback_count()` rendered in the report as
+"Rate-limit fallbacks", so a permanent 404 read as a transient 429 for a whole
+debugging cycle.
+
+**Fix — `hisaab/llm/providers.py`, three parts.**
+
+1. **Model default `gemini-2.5-flash` → `gemini-3.6-flash`**, overridable with
+   `GEMINI_MODEL` (bare env name; `ANTHROPIC_MODEL` / `GROQ_MODEL` aligned to
+   match). Documented in `.env.example` with a note that a stale default must
+   never silently break the run again.
+
+2. **Response parsing.** gemini-3.6-flash interleaves reasoning parts — a single
+   `parts[]` entry can carry a `thoughtSignature` and no `text` key at all.
+   Stopped indexing `parts[0]["text"]`; now `"".join(p["text"] for p in parts
+   if "text" in p)`. An empty `candidates` list or a missing `content` key
+   returns `""` (→ `ConfigError` in `complete()`), never an IndexError/KeyError.
+
+3. **Error classification split.** `_check()` now raises:
+   - `_Retryable` for **429 / 5xx** → retried 3× with 1s/2s backoff (4s cap),
+     `Retry-After` honoured; final give-up increments `rate_limit_fallbacks`.
+   - `ConfigError` for **any other 4xx**, or a **200 with no text** → **not
+     retried**, the API's own error message printed to stderr **once**, loudly;
+     increments `config_errors`.
+   `eval.run`'s report prints both counters on their own lines.
+
+**Verified (live, before the daily quota ran out):**
+
+| case | outcome | latency | counters |
+|---|---|---|---|
+| `GEMINI_MODEL=gemini-2.5-flash` (bad) | `ConfigError`, no retry, stderr banner printed once for the whole run | ~1.3 s/call | `config_errors=2`, `rate_limit_fallbacks=0` |
+| `gemini-3.6-flash`, quota exhausted | `_Retryable`, 3 attempts + backoff, then stub | ~6.2 s/call | `rate_limit_fallbacks=3`, `config_errors=0` |
+
+A misconfiguration now looks like a misconfiguration.
+
+**The fallback did its job.** The failed pre-fix smoke still **completed** and
+its answers were **correct**: 20/20 intent, 20/20 numerically correct, 0
+UNSUPPORTED NUMBERS — every answer produced by the deterministic stub after the
+LLM call failed. Nothing wrong reached the user. The only casualty was a
+debugging cycle spent chasing "rate limits" because the counter said so.
+
+**Follow-on blocker, reported not worked around.** With `gemini-3.6-flash` the
+404 is gone, but the smoke then 429s on:
+
+```
+Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests,
+limit: 20, model: gemini-3.6-flash
+(GenerateRequestsPerDayPerProjectPerModel-FreeTier)  "Please retry in 49.5s"
+```
+
+The gemini-3.6-flash **free tier is 20 requests per day**, and the day's 20
+were spent by the failed pre-fix run plus the curl diagnostics above. A
+300-question eval is 600 calls and cannot run on that tier at any pace. The new
+counters classify these correctly (`rate_limit_fallbacks`, loud). To fill the
+LLM column of the ablation table: wait for the Pacific-midnight quota reset, use
+a paid Gemini key, or set `HISAAB_LLM_PROVIDER=groq` (the `GROQ_MODEL` override
+is already wired) — Groq's free tier is far higher.
+
+### Reproduce
+
+```
+python -m eval.run --seed 42 --questions eval/questions.yaml --limit 20   # smoke (needs quota)
+python -m eval.run --seed 42 --questions eval/questions.yaml              # full LLM run
+python -m eval.run --seed 42 --questions eval/questions.yaml --offline    # regex-stub baseline
+```
+
+Baseline is unchanged from the previous entry (offline, seed 42): intent
+252/300, answer 217/240, wrong-answer 23/240 (all misroutes, 0 value bugs),
+wrong-refusal 0/240, correct-refusal 60/60, answered-the-unanswerable 0/60,
+UNSUPPORTED NUMBERS 0/300, `rate_limit_fallbacks` 0/300, `config_errors` 0/300,
+mean latency 1 ms.
