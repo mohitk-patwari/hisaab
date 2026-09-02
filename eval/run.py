@@ -6,13 +6,17 @@ Builds the ledger from the generator, runs every question through the
 engine + llm pipeline, scores against ground truth, prints a report and
 writes eval/report.md.
 
-Contract this expects the other terminals to expose (imported lazily so
-this module still loads while they're incomplete):
+Contract this expects (imported lazily so this module still loads while the
+llm layer is incomplete):
 
-    hisaab.generate.build_ledger(seed: int) -> Ledger
+    hisaab.generate.ledger.generate(seed: int) -> (Ledger, GroundTruth)   [ready]
     hisaab.llm.parse_intent(question: str) -> Intent   # Intent has .intent: str
     hisaab.engine.explain(ledger, intent) -> Explanation
     hisaab.llm.narrate(explanation: Explanation) -> str
+
+Ground truth is NOT taken from GroundTruth here — it is baked into
+eval/questions.yaml by eval.gen_questions, so the engine is never scored
+against a key it could also see.
 
 A question is "refused" when parse_intent returns intent == "unsupported"
 or explain() returns an Explanation with resolved == False.
@@ -21,7 +25,6 @@ or explain() returns an Explanation with resolved == False.
 from __future__ import annotations
 
 import argparse
-import sys
 import time
 from pathlib import Path
 
@@ -94,9 +97,9 @@ def _not_ready_exit(exc: Exception) -> None:
     msg = (
         "HISAAB EVAL — PIPELINE NOT READY\n\n"
         f"  {type(exc).__name__}: {exc}\n\n"
-        "The engine + llm pipeline is still being written. This command will\n"
-        "pass once these callables exist and match the contract:\n\n"
-        "  hisaab.generate.build_ledger(seed) -> Ledger\n"
+        "The llm layer is still being written. This command will pass once\n"
+        "these callables exist and match the contract:\n\n"
+        "  hisaab.generate.ledger.generate(seed) -> (Ledger, GroundTruth)   [ready]\n"
         "  hisaab.llm.parse_intent(question) -> Intent   # .intent: str\n"
         "  hisaab.engine.explain(ledger, intent) -> Explanation\n"
         "  hisaab.llm.narrate(explanation) -> str\n"
@@ -115,9 +118,9 @@ def main(argv: list[str] | None = None) -> None:
     questions = _load_questions(args.questions)
 
     try:
-        from hisaab.generate import build_ledger
+        from hisaab.generate.ledger import generate
 
-        ledger = build_ledger(args.seed)
+        ledger, _ground_truth = generate(args.seed)  # key is unused; see module docstring
         results = [_run_one(q, ledger) for q in questions]
     except _NOT_READY as exc:
         _not_ready_exit(exc)

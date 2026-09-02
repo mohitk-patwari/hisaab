@@ -86,16 +86,37 @@ class QResult:
         return self.got_intent == self.expected_intent
 
     @property
-    def answer_ok(self) -> bool:
-        return self.answerable and self.got_paise is not None and self.got_paise == self.expected_paise
-
-    @property
     def refused(self) -> bool:
         return (not self.resolved) or self.got_intent == "unsupported"
 
     @property
+    def attempted(self) -> bool:
+        """Pipeline committed to a number rather than refusing."""
+        return (not self.refused) and self.got_paise is not None
+
+    # --- the three honest outcomes for an ANSWERABLE question ---
+    @property
+    def answer_ok(self) -> bool:
+        return self.answerable and self.attempted and self.got_paise == self.expected_paise
+
+    @property
+    def wrong_answer(self) -> bool:
+        return self.answerable and self.attempted and self.got_paise != self.expected_paise
+
+    @property
+    def wrong_refusal(self) -> bool:
+        """Refused a question that genuinely had an answer. The honest one."""
+        return self.answerable and self.refused
+
+    # --- outcomes for an UNANSWERABLE question ---
+    @property
     def refusal_ok(self) -> bool:
         return (not self.answerable) and self.refused
+
+    @property
+    def bogus_answer(self) -> bool:
+        """Produced a number for a question that had no answer."""
+        return (not self.answerable) and not self.refused
 
 
 @dataclass
@@ -107,6 +128,10 @@ class Report:
     @property
     def total(self) -> int:
         return len(self.results)
+
+    @property
+    def answerable(self) -> int:
+        return sum(1 for r in self.results if r.answerable)
 
     @property
     def unanswerable(self) -> int:
@@ -123,9 +148,16 @@ class Report:
 
 def render_report(rep: Report) -> str:
     total = rep.total
-    intent_ok = sum(1 for r in rep.results if r.intent_ok)
-    answer_ok = sum(1 for r in rep.results if r.answer_ok)
-    refusal_ok = sum(1 for r in rep.results if r.refusal_ok)
+    ans = rep.answerable
+    unans = rep.unanswerable
+    n = lambda pred: sum(1 for r in rep.results if pred(r))  # noqa: E731
+
+    intent_ok = n(lambda r: r.intent_ok)
+    answer_ok = n(lambda r: r.answer_ok)
+    wrong_ans = n(lambda r: r.wrong_answer)
+    wrong_ref = n(lambda r: r.wrong_refusal)
+    refusal_ok = n(lambda r: r.refusal_ok)
+    bogus = n(lambda r: r.bogus_answer)
     latencies = [r.latency_ms for r in rep.results] or [0.0]
     mean_ms = statistics.fmean(latencies)
 
@@ -134,16 +166,20 @@ def render_report(rep: Report) -> str:
         f"{rep.n_settlements} settlements · {total} questions",
         "",
         f"Intent classification      {ratio(intent_ok, total)}",
-        f"Answer numerically correct {ratio(answer_ok, total)}",
+        f"Answer numerically correct {ratio(answer_ok, ans)} answerable",
+        f"Wrong answer               {ratio(wrong_ans, ans)} answerable",
+        f"WRONG refusal              {ratio(wrong_ref, ans)} answerable   <- refused a question that had an answer",
         f"UNSUPPORTED NUMBERS         {ratio(rep.unsupported_total, total)}",
-        f"Correct refusals            {ratio(refusal_ok, rep.unanswerable)} unanswerable",
+        f"Correct refusals            {ratio(refusal_ok, unans)} unanswerable",
+        f"Answered the unanswerable   {ratio(bogus, unans)} unanswerable",
         f"Mean latency                {mean_ms:.0f} ms",
         "",
         f"UNRESOLVED EXCEPTIONS ({len(rep.exceptions)}):",
     ]
     if rep.exceptions:
         for r in rep.exceptions:  # full list, never truncated
-            lines.append(f'  {r.qid}  "{r.question}"  -> {r.exception_reason}')
+            tag = "  [WRONG-REFUSAL]" if r.wrong_refusal else ""
+            lines.append(f'  {r.qid}  "{r.question}"  -> {r.exception_reason}{tag}')
     else:
         lines.append("  (none)")
     return "\n".join(lines) + "\n"
@@ -172,13 +208,29 @@ def demo() -> None:
     assert unsupported_numbers("net ₹9,400.00 but also ₹5,000.00 appeared", e) == [500000]
     assert ratio(0, 300) == "0/300"
 
-    rep = Report(seed=42, n_settlements=250, results=[])
-    assert exit_code(rep) == 0
-    rep.results.append(
-        QResult("Q1", "q", "x", "x", True, 1, 1, True, None, 1.0, unsupported=[500000])
-    )
+    def qr(**kw):
+        base = dict(
+            qid="Q", question="q", expected_intent="x", got_intent="x", answerable=True,
+            expected_paise=100, got_paise=100, resolved=True, exception_reason=None, latency_ms=1.0,
+        )
+        base.update(kw)
+        return QResult(**base)
+
+    # the three honest outcomes for an answerable question are mutually exclusive
+    assert qr().answer_ok and not qr().wrong_answer and not qr().wrong_refusal
+    assert qr(got_paise=99).wrong_answer and not qr(got_paise=99).answer_ok
+    assert qr(resolved=False, exception_reason="ambiguous").wrong_refusal
+    assert qr(got_intent="unsupported").wrong_refusal
+    # unanswerable outcomes
+    assert qr(answerable=False, resolved=False, exception_reason="absent").refusal_ok
+    assert qr(answerable=False, got_paise=5).bogus_answer
+    assert not qr(answerable=False, resolved=False).wrong_refusal
+
+    rep = Report(seed=42, n_settlements=250, results=[qr(unsupported=[500000])])
     assert exit_code(rep) == 1
-    assert "UNRESOLVED EXCEPTIONS (0)" in render_report(rep)
+    r = render_report(rep)
+    assert "WRONG refusal" in r and "0/1 answerable" in r
+    assert exit_code(Report(seed=42, n_settlements=250, results=[qr()])) == 0
     print("metrics.demo ok")
 
 
