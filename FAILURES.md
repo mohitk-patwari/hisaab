@@ -249,3 +249,89 @@ follow-up.
 | Correct refusals | 60/60 (100%) | 58/60 (96.7%) |
 | Answered the unanswerable | 0/60 | 2/60 — pre-existing stub gap, unmasked, see above |
 | Mean latency | 3 ms | 0 ms |
+
+## swappable LLM provider + the LLM path finally runs (2026-09-02)
+
+**Symptom.** Every number in the eval so far is the offline regex stub. The LLM
+path (`intent.parse`, `narrate`) had never executed once: the only backend was a
+hardcoded Anthropic `/v1/messages` call gated on `ANTHROPIC_API_KEY`, and no key
+was ever configured. So the whole "LLM at the two ends" design was unmeasured.
+
+**Fix.**
+
+- **`hisaab/llm/providers.py`** — one entry point, `complete(system, user,
+  max_tokens=1000) -> str`, over four backends chosen by `HISAAB_LLM_PROVIDER`
+  (`gemini` → generativelanguage.googleapis.com / `gemini-2.5-flash`,
+  `anthropic` → `/v1/messages` / `claude-sonnet-4-6`, `groq` →
+  openai-compatible `/chat/completions` / `llama-3.3-70b-versatile`, `offline` →
+  raises `NotConfigured`). Resolution order: `HISAAB_LLM_PROVIDER` if set, else
+  the first provider whose key is present, else offline. Decision logged once to
+  stderr. `httpx` only — no SDK deps added.
+- **Rate limiting.** 3 attempts, 1s/2s backoff (4s cap), `Retry-After` honoured
+  on 429; 4xx / empty / malformed responses are not retried. `HISAAB_LLM_DELAY_MS`
+  (default 100) slept before every request. On final failure the *caller* falls
+  through to its own stub for that one question and bumps
+  `providers.fallback_count()` — the run never crashes.
+- **`intent.parse` / `narrate.narrate`** now call `providers.complete`. Intent
+  output is `_extract_json` → pydantic `Intent`; one retry on a garbled/invalid
+  response, then `None` (a success path). `NotConfigured` → stub silently;
+  `LLMError` → stub + counted.
+- **`.env.example`** committed (every var documented, no real values); `.env`
+  already gitignored (`git check-ignore` confirms `.env` ignored, `.env.example`
+  not).
+- **Banner + `--offline`.** `python -m hisaab.cli` and `python -m eval.run` both
+  print `[hisaab] LLM path: LLM: gemini/gemini-2.5-flash` or
+  `[hisaab] LLM path: OFFLINE: regex stub (...)` at startup. `--offline` on
+  either forces the stub. `eval.run` also gained `--limit N` for a smoke run and
+  prints `Rate-limit fallbacks N/total` in the report.
+
+**Refusal-safety fix (prompt point 6), and *only* that.** `_stub_parse` used to
+fall through to `explain_settlement` for any question that named a settlement id
+but no field keyword — so `Q0294 "what card network did settlement stl_0042 use"`
+and `Q0300 "which city were the payments in settlement stl_0100 from"` got a
+confident net breakdown for a question Hisaab has no row to answer. Added a small
+`_NOT_MODELLED` denylist (`card`, `network`, `city`, `customer`, `contract`, …):
+id + a not-modelled term → refuse. This is a *refusal* gate, not routing
+enrichment — it does not touch the 23 known misroutes (verified: still 23
+answerable wrong answers post-fix, all `expected_intent != got_handler`, 0
+value bugs). The stub stays the dumb ablation baseline per prompt point 7.
+
+**Capability boundary (prompt point 9), not a routing failure.** Of the 60
+unanswerable questions, ~35 ask for period-over-period analysis — *"why were my
+tuesday settlements lower than usual"*, *"compare this tuesday to last
+tuesday"*, *"why did last month feel low"*. `hisaab/engine/queries.py` has no
+trend / period-comparison / anomaly handler and this change does not add one.
+There is nothing correct to route these to; the system refuses them, which is
+the right behaviour. They stay in the results as a known limitation. A better
+LLM cannot "fix" them — only a new query type could, and that is a product
+decision, not a parser tweak.
+
+### Metric delta — seed 42 (`eval/questions.yaml`, 250 settlements · 300 Qs)
+
+Reproduce:
+
+```
+python -m eval.run --seed 42 --questions eval/questions.yaml            # LLM (needs a key in .env)
+python -m eval.run --seed 42 --questions eval/questions.yaml --offline  # regex stub baseline
+python -m eval.run --seed 42 --questions eval/questions.yaml --limit 20 # 20-question smoke
+```
+
+| metric | OFFLINE regex stub | LLM (`<provider>/<model>`) |
+|---|---|---|
+| Intent classification | 252/300 | _pending — no provider key available this session_ |
+| Answer numerically correct | 217/240 | _pending_ |
+| Wrong answer | 23/240 (all intent misroutes, 0 value bugs) | _pending_ |
+| Wrong refusal | 0/240 | _pending_ |
+| Correct refusals | 60/60 | _pending_ |
+| Answered the unanswerable | 0/60 (was 2/60 before the point-6 fix) | _pending_ |
+| UNSUPPORTED NUMBERS | 0/300 | _pending_ |
+| Mean latency | 1 ms | _pending_ |
+| Rate-limit fallbacks | 0/300 | _pending_ |
+| of the 23 known misroutes, fixed by the LLM | — (baseline) | _pending_ |
+
+**Why pending:** no `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` / `GROQ_API_KEY` was
+available in this session. Provider plumbing is verified against all three live
+endpoints — each accepts the request body and rejects only on the bogus key
+(HTTP 401/400 `authentication_error`), and the non-retryable path fast-fails as
+designed. The moment a key is in `.env`, the first command above fills the LLM
+column and the ablation delta is the two columns side by side.

@@ -1,7 +1,9 @@
 """parse(question) -> Intent | None. Map English to one engine query handler.
 
-Returning None (cannot map confidently) is a success path. The LLM response must
-be strict JSON validated against Intent; on failure we retry once then give up.
+The LLM (via providers.complete) returns strict JSON validated against Intent;
+one retry on a parse/validation failure, then return None. Returning None
+(cannot map confidently) is a success path. With no provider configured, or if
+the provider fails, _stub_parse -- a deliberately dumb regex -- takes over.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
-from hisaab.llm import call_llm, have_llm
+from hisaab.llm import providers
 
 Handler = Literal[
     "explain_settlement",
@@ -84,31 +86,60 @@ def _extract_json(raw: str) -> dict | None:
     return obj if isinstance(obj, dict) else None
 
 
-def parse(question: str) -> Intent | None:
-    if not have_llm():
-        return _stub_parse(question)
+_PARSE_FAILED = object()  # unextractable JSON or Intent validation error -> worth one retry
 
-    for _ in range(2):  # initial try + one retry
+
+def _to_intent(raw: str):
+    """-> Intent | None (confident no-map) | _PARSE_FAILED (garbled)."""
+    obj = _extract_json(raw)
+    if obj is None:
+        return _PARSE_FAILED
+    if obj.get("handler") in (None, "", "none"):
+        return None
+    try:
+        return Intent(**obj)
+    except (ValidationError, TypeError, ValueError):
+        return _PARSE_FAILED
+
+
+def parse(question: str) -> Intent | None:
+    prompts = (question, question + "\n\nReturn ONLY the JSON object, nothing else.")
+    for i, user in enumerate(prompts):  # initial try + one retry, only on a parse failure
         try:
-            raw = call_llm(_SYSTEM, question, max_tokens=300)
-        except Exception:
-            continue
-        obj = _extract_json(raw)
-        if obj is None:
-            continue
-        try:
-            return Intent(**obj)
-        except (ValidationError, TypeError, ValueError):
-            continue
-    return None
+            raw = providers.complete(_SYSTEM, user, max_tokens=1000)
+        except providers.NotConfigured:
+            return _stub_parse(question)
+        except providers.LLMError:
+            providers.note_fallback()
+            return _stub_parse(question)
+        result = _to_intent(raw)
+        if result is not _PARSE_FAILED:
+            return result  # Intent, or None (confident no-map) -- both are success
+    return None  # parse failed twice
 
 
 # --- offline deterministic fallback ---------------------------------------
+#
+# This regex is the DUMB BASELINE the LLM ablation is measured against. Do not
+# teach it new synonyms to lift its score -- the gap to the LLM is the result.
+# The one allowed change (prompt point 6) is the refusal-safety gate below: it
+# only makes the stub REFUSE more, never route better.
 
 # A settlement id token, with or without a leading "settlement " word:
 # matches stl_0000 (real generator), setl_1 (fixtures/demo), "settlement stl_7", s3.
 _ID = re.compile(r"\b(?:settlement\s+)?((?:se?tl|s)_?\d+)\b", re.IGNORECASE)
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
+# Refusal-safety gate (prompt point 6). Naming a settlement id is not enough to
+# get a decomposition: if the question asks about an attribute Hisaab does not
+# model -- card network, city, customer, contract terms -- refuse instead of
+# defaulting to explain_settlement and answering confidently. This is the only
+# change to _stub_parse; it makes it refuse more, never route better, so the
+# ablation baseline stays honest.
+_NOT_MODELLED = (
+    "card", "network", "city", "location", "customer", "contract",
+    "currency", "percentage", "interest", "pending", "gmv",
+)
 
 
 def _stub_parse(question: str) -> Intent | None:
@@ -120,6 +151,8 @@ def _stub_parse(question: str) -> Intent | None:
     if len(ids) >= 2 and any(w in q for w in ("delta", "differ", "compare", " vs ", "between", "changed", "farak")):
         return _mk("explain_delta", settlement_id_a=ids[0], settlement_id_b=ids[1])
     if ids:
+        if any(w in q for w in _NOT_MODELLED):
+            return None  # asks about something Hisaab has no row for -> refuse, don't guess
         if "gst" in q:  # the standard Indian term for the tax component
             return _mk("component_breakdown", settlement_id=ids[0], component="tax")
         for comp in _COMPONENTS:

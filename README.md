@@ -68,17 +68,25 @@ confined to word choice — and the gate catches any figure it invents anyway.
 ```bash
 pip install -r requirements.txt
 
-# ask one question against a built-in demo ledger (fully offline)
+# optional: pick an LLM provider. Copy the template and add ONE key.
+cp .env.example .env        # then edit: HISAAB_LLM_PROVIDER + that provider's key
+
+# ask one question against a built-in demo ledger
 python -m hisaab.cli "explain settlement setl_1"
 
 # build a 250-settlement ledger for seed 42 and score all 300 questions
 python -m eval.run --seed 42 --questions eval/questions.yaml
 ```
 
+`.env.example` documents every variable (`HISAAB_LLM_PROVIDER` = `gemini` |
+`anthropic` | `groq` | `offline`, the per-provider key, `HISAAB_LLM_DELAY_MS`).
+`.env` is gitignored. With no key set — or with `--offline` on either command —
+`intent.parse` and `narrate` fall back to a deterministic regex stub, so
+everything above runs with no network. Every run prints a stderr banner naming
+the active path (`LLM: gemini/gemini-2.5-flash` or `OFFLINE: regex stub`).
+
 `eval/questions.yaml` is regenerated from the ledger's ground truth with
 `python -m eval.gen_questions --seed 42`; the checked-in copy is for seed 42.
-With no `ANTHROPIC_API_KEY` set, `intent.parse` and `narrate` fall back to
-deterministic stubs so everything above runs with no network.
 
 ## 6. Results
 

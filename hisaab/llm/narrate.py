@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 
 from hisaab.domain.models import Explanation
-from hisaab.llm import call_llm, have_llm
+from hisaab.llm import providers
 from hisaab.llm.gate import format_rupees
 
 _SYSTEM = (
@@ -33,14 +33,22 @@ def _payload(explanation: Explanation) -> dict:
     }
 
 
+def _llm(system: str, user: str) -> str:
+    """The one call out to the model. A seam tests patch to inject a narration
+    without also stubbing intent.parse (both would otherwise share
+    providers.complete)."""
+    return providers.complete(system, user, max_tokens=1000)
+
+
 def narrate(explanation: Explanation) -> str:
-    if have_llm():
-        try:
-            text = call_llm(_SYSTEM, json.dumps(_payload(explanation)), max_tokens=400).strip()
-            if text:
-                return text
-        except Exception:
-            pass
+    try:
+        text = _llm(_SYSTEM, json.dumps(_payload(explanation))).strip()
+        if text:
+            return text
+    except providers.NotConfigured:
+        pass
+    except providers.LLMError:
+        providers.note_fallback()
     return _stub_narrate(explanation)
 
 

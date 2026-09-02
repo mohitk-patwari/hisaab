@@ -121,9 +121,20 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="eval.run")
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--questions", default="eval/questions.yaml")
+    ap.add_argument("--offline", action="store_true", help="force the regex stub, ignore any provider key")
+    ap.add_argument("--limit", type=int, default=0, help="run only the first N questions (0 = all); for a smoke test")
     args = ap.parse_args(argv)
 
+    from hisaab.llm import providers
+
+    if args.offline:
+        providers.force_offline(True)
+    providers.log_decision(f"  |  seed {args.seed}  |  {args.questions}")
+
     questions = _load_questions(args.questions)
+    if args.limit > 0:
+        questions = questions[: args.limit]
+        print(f"[hisaab] smoke: first {len(questions)} questions only", file=sys.stderr)
 
     try:
         from hisaab.generate.ledger import generate
@@ -136,6 +147,11 @@ def main(argv: list[str] | None = None) -> None:
 
     rep = Report(seed=args.seed, n_settlements=len(ledger.settlements), results=results)
     text = render_report(rep)
+    text += (
+        f"\nPath                        {providers.describe()}"
+        f"\nRate-limit fallbacks        {providers.fallback_count()}/{len(results)}"
+        " (LLM call failed after retries -> answered by the offline stub)\n"
+    )
     try:
         print(text)
     except UnicodeEncodeError:  # ₹ vs the default Windows console codepage

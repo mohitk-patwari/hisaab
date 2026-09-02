@@ -1,9 +1,11 @@
 """Entrypoint: question -> intent -> deterministic query -> narrate -> gate -> print.
 
     python -m hisaab.cli "why did I only receive so little for setl_1?"
+    python -m hisaab.cli --offline "..."      # force the regex stub, ignore any key
 
-Loads data/ledger.json (pydantic Ledger dump) if present, else a built-in demo
-ledger so the whole pipeline runs offline with no setup.
+Prints a stderr banner naming the active path (LLM: <provider>/<model>, or
+OFFLINE: regex stub). Loads data/ledger.json (pydantic Ledger dump) if present,
+else a built-in demo ledger so the whole pipeline runs with no setup.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from pathlib import Path
 
 from hisaab.domain.models import Adjustment, Fee, Ledger, Payment, Refund, Settlement
 from hisaab.engine import queries
+from hisaab.llm import providers
 from hisaab.llm.gate import format_rupees, verify
 from hisaab.llm.intent import parse
 from hisaab.llm.narrate import narrate
@@ -70,11 +73,19 @@ def _print_trace(explanation) -> None:
 
 
 def main() -> None:
-    try:  # the ₹ sign trips the default Windows console codepage
-        sys.stdout.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):
-        pass
-    question = " ".join(sys.argv[1:]).strip() or "explain settlement setl_1"
+    for stream in (sys.stdout, sys.stderr):
+        try:  # the ₹ sign trips the default Windows console codepage
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
+    argv = sys.argv[1:]
+    if "--offline" in argv:
+        providers.force_offline(True)
+        argv = [a for a in argv if a != "--offline"]
+    providers.log_decision()
+
+    question = " ".join(argv).strip() or "explain settlement setl_1"
     ledger = _load_ledger()
 
     intent = parse(question)

@@ -63,12 +63,13 @@ def _ledger(note: str = "reserve adjustment") -> Ledger:
 def _llm_saying(reply: str | None):
     """Force narrate() down the LLM path with a canned reply; reply=None keeps
     it on the offline deterministic stub. Works with or without pytest."""
+    prov = narrate_mod.providers
     if reply is None:
-        with mock.patch.object(narrate_mod, "have_llm", lambda: False):
+        with mock.patch.object(narrate_mod, "_llm",
+                               side_effect=prov.NotConfigured("offline in test")):
             yield
     else:
-        with mock.patch.object(narrate_mod, "have_llm", lambda: True), \
-             mock.patch.object(narrate_mod, "call_llm", lambda system, user, **kw: reply):
+        with mock.patch.object(narrate_mod, "_llm", lambda system, user: reply):
             yield
 
 

@@ -1,16 +1,16 @@
 HISAAB EVAL — seed 42
 250 settlements · 300 questions
 
-Intent classification      250/300
+Intent classification      252/300
 Answer numerically correct 217/240 answerable
 Wrong answer               23/240 answerable
 WRONG refusal              0/240 answerable   <- refused a question that had an answer
 UNSUPPORTED NUMBERS         0/300
-Correct refusals            58/60 unanswerable
-Answered the unanswerable   2/60 unanswerable
+Correct refusals            60/60 unanswerable
+Answered the unanswerable   0/60 unanswerable
 Mean latency                1 ms
 
-UNRESOLVED EXCEPTIONS (58):
+UNRESOLVED EXCEPTIONS (60):
   Q0241  "why were my tuesday settlements lower than usual"  -> question did not map to a known query
   Q0242  "bhai monday ka payout kam kyun aata hai"  -> question did not map to a known query
   Q0243  "why is wednesday always low"  -> question did not map to a known query
@@ -64,8 +64,13 @@ UNRESOLVED EXCEPTIONS (58):
   Q0291  "which settlement settled on 2030-06-01"  -> no settlement settled on 2030-06-01 IST
   Q0292  "which settlement settled on 2019-07-01"  -> no settlement settled on 2019-07-01 IST
   Q0293  "which customer got the most refunds"  -> question did not map to a known query
+  Q0294  "what card network did settlement stl_0042 use"  -> question did not map to a known query
   Q0295  "how much interest did my reserve balance earn"  -> question did not map to a known query
   Q0296  "what is my lifetime GMV across every settlement"  -> question did not map to a known query
   Q0297  "what will my next settlement pay out"  -> question did not map to a known query
   Q0298  "how many chargebacks are pending right now"  -> question did not map to a known query
   Q0299  "what settlement fee percentage is in my contract"  -> question did not map to a known query
+  Q0300  "which city were the payments in settlement stl_0100 from"  -> question did not map to a known query
+
+Path                        OFFLINE: regex stub (--offline)
+Rate-limit fallbacks        0/300 (LLM call failed after retries -> answered by the offline stub)
