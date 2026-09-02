@@ -105,20 +105,23 @@ def parse(question: str) -> Intent | None:
 
 # --- offline deterministic fallback ---------------------------------------
 
-_ID = re.compile(r"\b(?:setl|settlement)[_-]?\w+|\bs\d+\b", re.IGNORECASE)
+# A settlement id token, with or without a leading "settlement " word:
+# matches stl_0000 (generator), setl_1 (demo), "settlement stl_7", s3.
+_ID = re.compile(r"\b(?:settlement\s+)?((?:se?tl|s)_?\d+)\b", re.IGNORECASE)
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
 
 def _stub_parse(question: str) -> Intent | None:
     q = question.lower()
-    ids = [m.group().split()[-1] if " " in m.group() else m.group() for m in _ID.finditer(question)]
-    ids = [i.replace("settlement ", "") for i in ids]
+    ids = [m.group(1) for m in _ID.finditer(question)]
 
     if (d := _DATE.search(question)) and not ids:
         return _mk("find_settlement_by_date", date_ist=d.group())
-    if len(ids) >= 2 and any(w in q for w in ("delta", "differ", "compare", " vs ", "between", "changed")):
+    if len(ids) >= 2 and any(w in q for w in ("delta", "differ", "compare", " vs ", "between", "changed", "farak")):
         return _mk("explain_delta", settlement_id_a=ids[0], settlement_id_b=ids[1])
     if ids:
+        if "gst" in q:  # the standard Indian term for the tax component
+            return _mk("component_breakdown", settlement_id=ids[0], component="tax")
         for comp in _COMPONENTS:
             if comp in q or comp.rstrip("s") in q:
                 return _mk("component_breakdown", settlement_id=ids[0], component=comp)
