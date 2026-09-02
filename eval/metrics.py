@@ -13,6 +13,64 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
+
+# ponytail: money-shaped token heuristic + exact-paise equality. Good enough while
+# the narrator formats rupees plainly. Upgrade to tolerance / locale-aware parsing
+# if narration starts writing lakh grouping or "~9.4k".
+#
+# A comma only counts as thousands-grouping when exactly 3 digits follow it
+# (₹1,741,811). Without that requirement, decompose()'s debug-style
+# exception_reason ("stated_net=6247711, computed_net=...") gets its sentence
+# comma swallowed into the number, turning a bare "6247711," into a phantom
+# "6,247,711" and flagging it as an unsupported/hallucinated figure.
+_MONEY_RE = re.compile(
+    r"(?:₹|Rs\.?|INR)?\s?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)", re.IGNORECASE
+)
+
+
+def _token_to_paise(tok: str) -> int | None:
+    stripped = re.sub(r"(?i)(₹|Rs\.?|INR|,|\s)", "", tok)
+    if not stripped or stripped in {".", "-"}:
+        return None
+    try:
+        paise = Decimal(stripped) * 100
+    except InvalidOperation:
+        return None
+    if paise != paise.to_integral_value():
+        return None
+    return abs(int(paise))
+
+
+def _is_money_shaped(tok: str) -> bool:
+    return bool(re.search(r"(?i)₹|Rs|INR", tok)) or "." in tok or "," in tok
+
+
+def extract_money_paise(text: str) -> list[int]:
+    """Every money-shaped number in a string, as integer paise."""
+    out: list[int] = []
+    for m in _MONEY_RE.finditer(text or ""):
+        tok = m.group(0).strip()
+        if not _is_money_shaped(tok):
+            continue
+        p = _token_to_paise(tok)
+        if p is not None:
+            out.append(p)
+    return out
+
+
+def supported_paise(explanation) -> set[int]:
+    """Paise values an Explanation actually traces to a source row."""
+    vals = {abs(line.value_paise) for line in explanation.lines}
+    vals.add(abs(explanation.total.value_paise))
+    vals.add(abs(explanation.residual_paise))
+    return vals
+
+
+def unsupported_numbers(narration: str, explanation) -> list[int]:
+    """Money numbers in the narration that no TracedValue backs. Hallucinations."""
+    ok = supported_paise(explanation)
+    return [p for p in extract_money_paise(narration) if p not in ok]
 
 
 def ratio(n: int, denom: int) -> str:

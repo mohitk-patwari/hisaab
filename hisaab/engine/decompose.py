@@ -4,15 +4,18 @@ Pure integer arithmetic. No LLM, no network, no randomness.
 
     net = gross - fees - tax - refunds + adjustments
 
-The frozen domain contract has no explicit payment/refund -> settlement foreign
-key (only Adjustment carries settlement_id). So payments and refunds are
-assigned to the earliest settlement that settled at or after the row's own
-timestamp, i.e. this settlement owns rows in the half-open window
-(previous_settlement.settled_at_utc, this_settlement.settled_at_utc].
+Payments, refunds and fees now carry an explicit settlement_id (added
+2026-09-02 -- see FAILURES.md "domain contract unfrozen once"), so
+membership is a direct FK lookup via Ledger.payments_for/refunds_for/
+fees_for. A None settlement_id means genuinely unsettled, not missing data.
 
-# ponytail: date-window assignment, because the contract lacks a settlement_id
-# on Payment/Refund/Fee. If those columns get added, replace _window() with a
-# direct index lookup and delete the ordering dance.
+The old date-window logic (assign a row to the settlement whose window
+(previous_settlement.settled_at_utc, this_settlement.settled_at_utc] contains
+its own timestamp) is kept, but demoted: it now runs ONLY over rows with
+settlement_id=None, purely to report "a naive date guess would have swept
+this row in" via exception_reason. It never contributes to the computed
+net -- an unsettled row is unsettled regardless of how well its timestamp
+lines up with some settlement's window.
 """
 
 from __future__ import annotations
@@ -20,9 +23,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from hisaab.domain.models import (
+    Adjustment,
     Explanation,
+    Fee,
     Ledger,
+    Payment,
     Provenance,
+    Refund,
     TracedValue,
 )
 
@@ -32,12 +39,26 @@ _COMPONENTS = ("gross", "fees", "tax", "refunds", "adjustments")
 _SUSPECT_ORDER = ("adjustments", "refunds", "tax", "fees", "gross")
 
 
+# ponytail: duplicated from hisaab/llm/gate.py's format_rupees (2 lines) rather
+# than importing it -- engine computes, llm narrates, and this module has no
+# business depending on the llm layer. Extract to a shared module if a third
+# copy shows up.
+def _fmt_rupees(paise: int) -> str:
+    sign = "-" if paise < 0 else ""
+    return f"{sign}₹{abs(paise) // 100:,}.{abs(paise) % 100:02d}"
+
+
 def _ordered_settlements(ledger: Ledger):
     return sorted(ledger.settlements, key=lambda s: s.settled_at_utc)
 
 
 def _window(ledger: Ledger, settlement_id: str):
-    """Return (settlement, lo_exclusive_or_None, hi_inclusive)."""
+    """Return (settlement, lo_exclusive_or_None, hi_inclusive).
+
+    FALLBACK ONLY: no longer used to decide primary membership (that's the
+    settlement_id FK now). Still needed to bound the window a null-FK row
+    would have landed in, for the "still unsettled" diagnostic below.
+    """
     if settlement_id not in ledger.settlements_by_id:
         raise KeyError(f"no settlement {settlement_id!r} in ledger")
     ordered = _ordered_settlements(ledger)
@@ -52,6 +73,40 @@ def _in_window(ts: datetime, lo, hi) -> bool:
     return (lo is None or ts > lo) and ts <= hi
 
 
+def _unsettled_in_window(
+    ledger: Ledger, lo, hi
+) -> tuple[list[Payment], list[Refund]]:
+    """Rows with settlement_id=None whose own timestamp falls in this
+    settlement's date window -- what the old window-only logic would have
+    assigned here. Reported, never included: settlement_id=None means
+    genuinely unsettled, not "assign me by best guess."
+    """
+    payments = [p for p in ledger.payments
+                if p.settlement_id is None and _in_window(p.captured_at_utc, lo, hi)]
+    refunds = [r for r in ledger.refunds
+               if r.settlement_id is None and _in_window(r.created_at_utc, lo, hi)]
+    return payments, refunds
+
+
+def _unsettled_note(payments: list[Payment], refunds: list[Refund]) -> str:
+    parts = []
+    if payments:
+        ids = [p.payment_id for p in payments]
+        total = _fmt_rupees(sum(p.gross_paise for p in payments))
+        parts.append(
+            f"{len(payments)} payment(s) captured in this settlement's window are still "
+            f"unsettled ({total} total, {ids}) -- excluded from this net pending settlement"
+        )
+    if refunds:
+        ids = [r.refund_id for r in refunds]
+        total = _fmt_rupees(sum(r.amount_paise for r in refunds))
+        parts.append(
+            f"{len(refunds)} refund(s) in this settlement's window are still unsettled "
+            f"({total} total, {ids}) -- excluded from this net pending settlement"
+        )
+    return "; ".join(parts) + "."
+
+
 def _prov(table: str, ids, field: str) -> list[Provenance]:
     return [Provenance(source_table=table, source_id=str(i), field=field) for i in ids]
 
@@ -64,12 +119,11 @@ def _traced(value: int, label: str, provs: list[Provenance], settlement_id: str)
 
 
 def decompose(ledger: Ledger, settlement_id: str) -> Explanation:
-    this, lo, hi = _window(ledger, settlement_id)
+    this, lo, hi = _window(ledger, settlement_id)  # bounds kept only for the fallback below
 
-    payments = [p for p in ledger.payments if _in_window(p.captured_at_utc, lo, hi)]
-    refunds = [r for r in ledger.refunds if _in_window(r.created_at_utc, lo, hi)]
-    fee_index = ledger.fee_by_payment_id
-    fees = [fee_index[p.payment_id] for p in payments if p.payment_id in fee_index]
+    payments = ledger.payments_for(settlement_id)
+    refunds = ledger.refunds_for(settlement_id)
+    fees = ledger.fees_for(settlement_id)
     adjustments = ledger.adjustments_by_settlement_id.get(settlement_id, [])
 
     gross = sum(p.gross_paise for p in payments)
@@ -98,10 +152,17 @@ def decompose(ledger: Ledger, settlement_id: str) -> Explanation:
     reason = None
     if not resolved:
         reason = _suspect(residual, stated_net, computed_net, lines, payments, refunds, fees, adjustments)
+    else:
+        # FALLBACK fires here: resolved is still True (the FK-based net is
+        # exact), but if the old window logic would have swept in a still-
+        # unsettled row, say so -- it's real, useful context, not an error.
+        unsettled_payments, unsettled_refunds = _unsettled_in_window(ledger, lo, hi)
+        if unsettled_payments or unsettled_refunds:
+            reason = _unsettled_note(unsettled_payments, unsettled_refunds)
 
     return Explanation(
         settlement_id=settlement_id,
-        question=f"How is the net of settlement {settlement_id} ({stated_net} paise) built up?",
+        question=f"How is the net of settlement {settlement_id} ({_fmt_rupees(stated_net)}) built up?",
         lines=lines,
         total=total,
         residual_paise=residual,
@@ -110,51 +171,60 @@ def decompose(ledger: Ledger, settlement_id: str) -> Explanation:
     )
 
 
-def _suspect(residual, stated, computed, lines, payments, refunds, fees, adjustments) -> str:
+def _suspect(
+    residual: int, stated: int, computed: int, lines: list[TracedValue],
+    payments: list[Payment], refunds: list[Refund], fees: list[Fee], adjustments: list[Adjustment],
+) -> str:
     """Name the single component most likely to carry the discrepancy.
 
     Never generic: always cites a component, and where possible the specific
     source rows and the direction of the gap. Order of checks: structural gaps
     in the row set first, then exact-value matches, then the largest deduction.
+    All amounts are ₹-formatted prose -- no bare paise integers, since this
+    text is embedded verbatim in narrations and money-shaped tokens there get
+    checked against the trace.
     """
     by_label = {ln.label: ln for ln in lines}
-    ctx = f"stated_net={stated}, computed_net={computed}, residual={residual:+d} paise."
+    ctx = (
+        f"The settlement states {_fmt_rupees(stated)}; recomputing from source rows gives "
+        f"{_fmt_rupees(computed)}."
+    )
 
     if all(by_label[l].value_paise == 0 for l in _SUSPECT_ORDER):
         return (
-            f"gross suspect: stated_net={stated} paise but no payments, fees, refunds or "
-            f"adjustments resolve to this settlement; its contributing row set is empty."
+            f"gross suspect: the settlement states {_fmt_rupees(stated)} but no payments, fees, "
+            f"refunds or adjustments resolve to it -- its contributing row set is empty."
         )
 
-    # Structural: window payments that carry no fee row -> fees/tax understated,
+    # Structural: FK payments that carry no fee row -> fees/tax understated,
     # which pushes computed_net above stated_net (residual negative).
     priced = {f.payment_id for f in fees}
     unpriced = [p.payment_id for p in payments if p.payment_id not in priced]
     if unpriced and residual < 0:
         return (
             f"fees suspect: payment(s) {unpriced} have no fee row, so fees "
-            f"({by_label['fees'].value_paise} paise) and tax are understated and computed_net "
-            f"overshoots stated_net. {ctx}"
+            f"({_fmt_rupees(by_label['fees'].value_paise)}) and tax are understated and the "
+            f"computed net overshoots the stated net. {ctx}"
         )
 
-    # Structural: a refund in the window not tied to any payment in the window
-    # -> the refund window is misaligned with the payment window.
-    window_pids = {p.payment_id for p in payments}
-    orphan = [r.refund_id for r in refunds if r.payment_id not in window_pids]
+    # Structural: a refund tied to a payment outside this settlement's payment
+    # set -- the FK on the refund and the FK on its payment disagree.
+    settled_pids = {p.payment_id for p in payments}
+    orphan = [r.refund_id for r in refunds if r.payment_id not in settled_pids]
     if orphan:
         return (
             f"refunds suspect: refund(s) {orphan} reference a payment outside this settlement's "
-            f"payment set, so refunds ({by_label['refunds'].value_paise} paise) covers the wrong "
-            f"window. {ctx}"
+            f"payment set, so refunds ({_fmt_rupees(by_label['refunds'].value_paise)}) cover the "
+            f"wrong rows. {ctx}"
         )
 
     # Exact: the gap is one adjustment row applied twice or not at all.
     for a in adjustments:
         if a.amount_paise in (residual, -residual):
             return (
-                f"adjustments suspect: residual {residual:+d} paise exactly matches adjustment "
-                f"{a.adjustment_id} ({a.kind}, {a.amount_paise:+d} paise); it was applied twice or "
-                f"not at all. {ctx}"
+                f"adjustments suspect: the gap ({_fmt_rupees(abs(residual))}) exactly matches "
+                f"adjustment {a.adjustment_id} ({a.kind}, {_fmt_rupees(a.amount_paise)}); it was "
+                f"applied twice or not at all. {ctx}"
             )
 
     # Exact: the gap is one whole component total (double-counted or omitted).
@@ -163,8 +233,9 @@ def _suspect(residual, stated, computed, lines, payments, refunds, fees, adjustm
         if v != 0 and residual in (v, -v):
             ids = [p.source_id for p in by_label[label].provenance]
             return (
-                f"{label} suspect: residual {residual:+d} paise equals the entire {label} total "
-                f"({v} paise) from rows {ids}; {label} was double-counted or omitted. {ctx}"
+                f"{label} suspect: the gap ({_fmt_rupees(abs(residual))}) equals the entire "
+                f"{label} total ({_fmt_rupees(v)}) from rows {ids}; {label} was double-counted "
+                f"or omitted. {ctx}"
             )
 
     # Fallback: blame the largest deduction; the residual sign gives direction.
@@ -174,8 +245,8 @@ def _suspect(residual, stated, computed, lines, payments, refunds, fees, adjustm
     label, _ = max(deductions, key=lambda d: d[1], default=("gross", 0))
     ln = by_label[label]
     ids = [p.source_id for p in ln.provenance]
-    direction = "over-deducted (computed_net too low)" if residual > 0 else "under-deducted (computed_net too high)"
+    direction = "over-deducted (the computed net is too low)" if residual > 0 else "under-deducted (the computed net is too high)"
     return (
-        f"{label} suspect: it is the largest deduction ({ln.value_paise} paise from rows {ids}) and "
-        f"the books are {direction} by {abs(residual)} paise. {ctx}"
+        f"{label} suspect: it is the largest deduction ({_fmt_rupees(ln.value_paise)} from rows "
+        f"{ids}) and the books are {direction} by {_fmt_rupees(abs(residual))}. {ctx}"
     )

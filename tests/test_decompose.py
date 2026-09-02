@@ -20,8 +20,9 @@ def _dt(day, hour=12):
     return datetime(2026, 1, day, hour, 0)
 
 
-def _pay(pid, day, gross):
-    return Payment(payment_id=pid, order_id=f"ord_{pid}", captured_at_utc=_dt(day), gross_paise=gross, method="upi")
+def _pay(pid, day, gross, settlement_id=None):
+    return Payment(payment_id=pid, order_id=f"ord_{pid}", captured_at_utc=_dt(day), gross_paise=gross,
+                   method="upi", settlement_id=settlement_id)
 
 
 def _settle(sid, day, net, hour=23):
@@ -31,12 +32,13 @@ def _settle(sid, day, net, hour=23):
 # --- a ledger that reconciles exactly -----------------------------------------
 
 def _clean_ledger():
-    payments = [_pay("pay_1", 10, 100_000), _pay("pay_2", 10, 50_000)]
+    payments = [_pay("pay_1", 10, 100_000, "setl_1"), _pay("pay_2", 10, 50_000, "setl_1")]
     fees = [
-        Fee(payment_id="pay_1", fee_paise=2_000, tax_paise=360),
-        Fee(payment_id="pay_2", fee_paise=1_000, tax_paise=180),
+        Fee(payment_id="pay_1", fee_paise=2_000, tax_paise=360, settlement_id="setl_1"),
+        Fee(payment_id="pay_2", fee_paise=1_000, tax_paise=180, settlement_id="setl_1"),
     ]
-    refunds = [Refund(refund_id="rfnd_1", payment_id="pay_1", created_at_utc=_dt(10, 15), amount_paise=5_000)]
+    refunds = [Refund(refund_id="rfnd_1", payment_id="pay_1", created_at_utc=_dt(10, 15), amount_paise=5_000,
+                       settlement_id="setl_1")]
     adjustments = [
         Adjustment(adjustment_id="adj_1", settlement_id="setl_1", kind="reserve_hold", amount_paise=-3_000, note="hold"),
     ]
@@ -81,9 +83,10 @@ def test_empty_component_still_has_provenance():
 
 def test_tampered_fee_falls_back_to_largest_deduction():
     # gross 300000, fee 15000 (largest deduction), tax 2700, refund 4000, no adj.
-    payments = [_pay("pay_x", 10, 300_000)]
-    fees = [Fee(payment_id="pay_x", fee_paise=15_900, tax_paise=2_700)]  # fee is 900 too high vs stated
-    refunds = [Refund(refund_id="rfnd_x", payment_id="pay_x", created_at_utc=_dt(10, 15), amount_paise=4_000)]
+    payments = [_pay("pay_x", 10, 300_000, "setl_1")]
+    fees = [Fee(payment_id="pay_x", fee_paise=15_900, tax_paise=2_700, settlement_id="setl_1")]  # fee is 900 too high vs stated
+    refunds = [Refund(refund_id="rfnd_x", payment_id="pay_x", created_at_utc=_dt(10, 15), amount_paise=4_000,
+                       settlement_id="setl_1")]
     settlements = [_settle("setl_1", 11, 278_300)]  # = 300000 - 15000 - 2700 - 4000
     led = Ledger(payments=payments, refunds=refunds, fees=fees, settlements=settlements)
     exp = decompose(led, "setl_1")
@@ -108,8 +111,8 @@ def test_residual_matching_an_adjustment_names_that_adjustment():
 
 
 def test_missing_fee_row_names_fees():
-    payments = [_pay("pay_1", 10, 100_000), _pay("pay_2", 10, 50_000)]
-    fees = [Fee(payment_id="pay_1", fee_paise=2_000, tax_paise=0)]  # pay_2 has no fee row
+    payments = [_pay("pay_1", 10, 100_000, "setl_1"), _pay("pay_2", 10, 50_000, "setl_1")]
+    fees = [Fee(payment_id="pay_1", fee_paise=2_000, tax_paise=0, settlement_id="setl_1")]  # pay_2 has no fee row
     settlements = [_settle("setl_1", 11, 145_000)]  # assumes both fees present -> too low
     led = Ledger(payments=payments, fees=fees, settlements=settlements)
     exp = decompose(led, "setl_1")
@@ -130,11 +133,13 @@ def test_unknown_settlement_raises():
         decompose(_clean_ledger(), "nope")
 
 
-# --- date windowing ---------------------------------------------------------
+# --- settlement_id FK is the primary membership; date windowing is a fallback
+# used only to diagnose null-FK rows, never to include them --------------------
 
-def test_payments_partitioned_across_two_settlements():
-    payments = [_pay("pay_early", 5, 40_000), _pay("pay_late", 12, 60_000)]
-    fees = [Fee(payment_id="pay_early", fee_paise=0, tax_paise=0), Fee(payment_id="pay_late", fee_paise=0, tax_paise=0)]
+def test_fk_assigns_payments_to_their_own_settlement():
+    payments = [_pay("pay_early", 5, 40_000, "setl_a"), _pay("pay_late", 12, 60_000, "setl_b")]
+    fees = [Fee(payment_id="pay_early", fee_paise=0, tax_paise=0, settlement_id="setl_a"),
+            Fee(payment_id="pay_late", fee_paise=0, tax_paise=0, settlement_id="setl_b")]
     settlements = [_settle("setl_a", 8, 40_000), _settle("setl_b", 15, 60_000)]
     led = Ledger(payments=payments, fees=fees, settlements=settlements)
 
@@ -143,6 +148,25 @@ def test_payments_partitioned_across_two_settlements():
     assert {p.source_id for p in next(l for l in a.lines if l.label == "gross").provenance} == {"pay_early"}
     assert {p.source_id for p in next(l for l in b.lines if l.label == "gross").provenance} == {"pay_late"}
     assert a.resolved and b.resolved
+    assert a.exception_reason is None and b.exception_reason is None
+
+
+def test_unsettled_payment_in_window_is_reported_not_included():
+    """A None settlement_id means genuinely unsettled: even though its own
+    timestamp falls inside setl_a's date window, it must not be swept into
+    setl_a's gross -- only reported via the fallback diagnostic."""
+    settled = _pay("pay_settled", 5, 40_000, "setl_a")
+    stray = _pay("pay_stray", 6, 999, settlement_id=None)  # in setl_a's window, but unsettled
+    fees = [Fee(payment_id="pay_settled", fee_paise=0, tax_paise=0, settlement_id="setl_a")]
+    settlements = [_settle("setl_a", 8, 40_000), _settle("setl_b", 15, 60_000)]
+    led = Ledger(payments=[settled, stray], fees=fees, settlements=settlements)
+
+    exp = decompose(led, "setl_a")
+    assert {p.source_id for p in next(l for l in exp.lines if l.label == "gross").provenance} == {"pay_settled"}
+    assert exp.total.value_paise == 40_000
+    assert exp.resolved is True  # the FK-based net is exact
+    assert "pay_stray" in exp.exception_reason
+    assert "still unsettled" in exp.exception_reason
 
 
 # --- query handlers -------------------------------------------------------
@@ -166,8 +190,9 @@ def test_component_breakdown_rejects_bad_component():
 
 
 def test_explain_delta():
-    payments = [_pay("p1", 5, 40_000), _pay("p2", 12, 70_000)]
-    fees = [Fee(payment_id="p1", fee_paise=1_000, tax_paise=0), Fee(payment_id="p2", fee_paise=2_000, tax_paise=0)]
+    payments = [_pay("p1", 5, 40_000, "s_a"), _pay("p2", 12, 70_000, "s_b")]
+    fees = [Fee(payment_id="p1", fee_paise=1_000, tax_paise=0, settlement_id="s_a"),
+            Fee(payment_id="p2", fee_paise=2_000, tax_paise=0, settlement_id="s_b")]
     settlements = [_settle("s_a", 8, 39_000), _settle("s_b", 15, 68_000)]
     led = Ledger(payments=payments, fees=fees, settlements=settlements)
     exp = queries.explain_delta(led, {"settlement_id_a": "s_a", "settlement_id_b": "s_b"})

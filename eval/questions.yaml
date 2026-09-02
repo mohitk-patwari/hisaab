@@ -9,7 +9,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 163651
+  expected_paise: 154427
   expected_reason: null
   hinglish: true
 - id: Q0002
@@ -17,7 +17,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 114750
+  expected_paise: 111315
   expected_reason: null
   hinglish: false
 - id: Q0003
@@ -33,7 +33,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 198955
+  expected_paise: 185817
   expected_reason: null
   hinglish: false
 - id: Q0005
@@ -49,7 +49,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 110867
+  expected_paise: 107114
   expected_reason: null
   hinglish: false
 - id: Q0007
@@ -65,7 +65,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 206192
+  expected_paise: 202744
   expected_reason: null
   hinglish: true
 - id: Q0009
@@ -73,7 +73,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 206508
+  expected_paise: 152491
   expected_reason: null
   hinglish: false
 - id: Q0010
@@ -97,7 +97,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 105352
+  expected_paise: 104792
   expected_reason: null
   hinglish: false
 - id: Q0013
@@ -113,7 +113,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 91097
+  expected_paise: 89241
   expected_reason: null
   hinglish: false
 - id: Q0015
@@ -137,7 +137,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 124170
+  expected_paise: 122180
   expected_reason: null
   hinglish: false
 - id: Q0018
@@ -193,7 +193,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 29459
+  expected_paise: 27799
   expected_reason: null
   hinglish: false
 - id: Q0025
@@ -201,7 +201,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 20655
+  expected_paise: 20037
   expected_reason: null
   hinglish: false
 - id: Q0026
@@ -217,7 +217,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 35811
+  expected_paise: 33447
   expected_reason: null
   hinglish: false
 - id: Q0028
@@ -233,7 +233,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 19958
+  expected_paise: 19282
   expected_reason: null
   hinglish: true
 - id: Q0030
@@ -249,7 +249,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 37115
+  expected_paise: 36494
   expected_reason: null
   hinglish: false
 - id: Q0032
@@ -257,7 +257,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 37171
+  expected_paise: 27448
   expected_reason: null
   hinglish: false
 - id: Q0033
@@ -281,7 +281,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 18964
+  expected_paise: 18863
   expected_reason: null
   hinglish: false
 - id: Q0036
@@ -297,7 +297,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 16399
+  expected_paise: 16065
   expected_reason: null
   hinglish: false
 - id: Q0038
@@ -321,7 +321,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 22351
+  expected_paise: 21993
   expected_reason: null
   hinglish: false
 - id: Q0041
@@ -561,7 +561,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 8182632
+  expected_paise: 7721422
   expected_reason: null
   hinglish: false
 - id: Q0071
@@ -569,7 +569,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 5737407
+  expected_paise: 5565651
   expected_reason: null
   hinglish: true
 - id: Q0072
@@ -585,7 +585,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 9947781
+  expected_paise: 9290893
   expected_reason: null
   hinglish: false
 - id: Q0074
@@ -601,7 +601,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 5543242
+  expected_paise: 5355571
   expected_reason: null
   hinglish: false
 - id: Q0076
@@ -617,7 +617,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 10309558
+  expected_paise: 10137186
   expected_reason: null
   hinglish: false
 - id: Q0078
@@ -625,7 +625,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 10325428
+  expected_paise: 7624574
   expected_reason: null
   hinglish: true
 - id: Q0079
@@ -649,7 +649,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 5267544
+  expected_paise: 5239540
   expected_reason: null
   hinglish: false
 - id: Q0082
@@ -665,7 +665,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 4554773
+  expected_paise: 4461986
   expected_reason: null
   hinglish: false
 - id: Q0084
@@ -689,7 +689,7 @@
   bucket: straightforward
   intent: component_breakdown
   answerable: true
-  expected_paise: 6208489
+  expected_paise: 6108969
   expected_reason: null
   hinglish: false
 - id: Q0087
@@ -745,7 +745,7 @@
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 6247711
+  expected_paise: 5797385
   expected_reason: null
   hinglish: false
 - id: Q0094
@@ -753,7 +753,7 @@
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 5285012
+  expected_paise: 5117309
   expected_reason: null
   hinglish: false
 - id: Q0095
@@ -769,7 +769,7 @@
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 8536013
+  expected_paise: 7894627
   expected_reason: null
   hinglish: false
 - id: Q0097
@@ -785,7 +785,7 @@
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 5163872
+  expected_paise: 4980630
   expected_reason: null
   hinglish: false
 - id: Q0099
@@ -801,7 +801,7 @@
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 9826097
+  expected_paise: 9657794
   expected_reason: null
   hinglish: false
 - id: Q0101
@@ -809,7 +809,7 @@
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 9827807
+  expected_paise: 7190693
   expected_reason: null
   hinglish: false
 - id: Q0102
@@ -833,7 +833,7 @@
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 5072472
+  expected_paise: 5045129
   expected_reason: null
   hinglish: false
 - id: Q0105
@@ -849,7 +849,7 @@
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 4447277
+  expected_paise: 4356680
   expected_reason: null
   hinglish: true
 - id: Q0107
@@ -873,7 +873,7 @@
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 5803535
+  expected_paise: 5706363
   expected_reason: null
   hinglish: false
 - id: Q0110
@@ -925,19 +925,19 @@
   expected_reason: null
   hinglish: false
 - id: Q0116
-  question: why did I only receive ₹62,477.11 in settlement stl_0000
+  question: why did I only receive ₹57,973.85 in settlement stl_0000
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 6247711
+  expected_paise: 5797385
   expected_reason: null
   hinglish: false
 - id: Q0117
-  question: why did I only receive ₹52,850.12 in settlement stl_0010
+  question: why did I only receive ₹51,173.09 in settlement stl_0010
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 5285012
+  expected_paise: 5117309
   expected_reason: null
   hinglish: false
 - id: Q0118
@@ -949,11 +949,11 @@
   expected_reason: null
   hinglish: false
 - id: Q0119
-  question: why did I only receive ₹85,360.13 in settlement stl_0030
+  question: why did I only receive ₹78,946.27 in settlement stl_0030
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 8536013
+  expected_paise: 7894627
   expected_reason: null
   hinglish: false
 - id: Q0120
@@ -965,11 +965,11 @@
   expected_reason: null
   hinglish: true
 - id: Q0121
-  question: why did I only receive ₹51,638.72 in settlement stl_0050
+  question: why did I only receive ₹49,806.30 in settlement stl_0050
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 5163872
+  expected_paise: 4980630
   expected_reason: null
   hinglish: false
 - id: Q0122
@@ -981,19 +981,19 @@
   expected_reason: null
   hinglish: false
 - id: Q0123
-  question: why did I only receive ₹98,260.97 in settlement stl_0070
+  question: why did I only receive ₹96,577.94 in settlement stl_0070
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 9826097
+  expected_paise: 9657794
   expected_reason: null
   hinglish: false
 - id: Q0124
-  question: why did I only receive ₹98,278.07 in settlement stl_0080
+  question: why did I only receive ₹71,906.93 in settlement stl_0080
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 9827807
+  expected_paise: 7190693
   expected_reason: null
   hinglish: false
 - id: Q0125
@@ -1013,11 +1013,11 @@
   expected_reason: null
   hinglish: false
 - id: Q0127
-  question: bhai stl_0110 me sirf ₹50,724.72 kyun aaya
+  question: bhai stl_0110 me sirf ₹50,451.29 kyun aaya
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 5072472
+  expected_paise: 5045129
   expected_reason: null
   hinglish: true
 - id: Q0128
@@ -1029,11 +1029,11 @@
   expected_reason: null
   hinglish: false
 - id: Q0129
-  question: why did I only receive ₹44,472.77 in settlement stl_0130
+  question: why did I only receive ₹43,566.80 in settlement stl_0130
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 4447277
+  expected_paise: 4356680
   expected_reason: null
   hinglish: false
 - id: Q0130
@@ -1053,11 +1053,11 @@
   expected_reason: null
   hinglish: false
 - id: Q0132
-  question: why did I only receive ₹58,035.35 in settlement stl_0160
+  question: why did I only receive ₹57,063.63 in settlement stl_0160
   bucket: straightforward
   intent: explain_settlement
   answerable: true
-  expected_paise: 5803535
+  expected_paise: 5706363
   expected_reason: null
   hinglish: false
 - id: Q0133
@@ -1201,7 +1201,7 @@
   bucket: straightforward
   intent: largest_deduction
   answerable: true
-  expected_paise: 105352
+  expected_paise: 104792
   expected_reason: null
   hinglish: false
 - id: Q0151
@@ -1217,7 +1217,7 @@
   bucket: straightforward
   intent: largest_deduction
   answerable: true
-  expected_paise: 91097
+  expected_paise: 89241
   expected_reason: null
   hinglish: false
 - id: Q0153
@@ -1297,7 +1297,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: -3997703
+  expected_paise: -3547377
   expected_reason: null
   hinglish: true
 - id: Q0163
@@ -1305,7 +1305,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: 4792911
+  expected_paise: 4960614
   expected_reason: null
   hinglish: false
 - id: Q0164
@@ -1321,7 +1321,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: -1953149
+  expected_paise: -1311763
   expected_reason: null
   hinglish: false
 - id: Q0166
@@ -1329,7 +1329,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: -98869
+  expected_paise: -139327
   expected_reason: null
   hinglish: false
 - id: Q0167
@@ -1337,7 +1337,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: 1023791
+  expected_paise: 1207033
   expected_reason: null
   hinglish: false
 - id: Q0168
@@ -1353,7 +1353,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: -6571343
+  expected_paise: -6736906
   expected_reason: null
   hinglish: true
 - id: Q0170
@@ -1361,7 +1361,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: -5207591
+  expected_paise: -2570477
   expected_reason: null
   hinglish: false
 - id: Q0171
@@ -1369,7 +1369,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: -1540566
+  expected_paise: -1601028
   expected_reason: null
   hinglish: false
 - id: Q0172
@@ -1385,7 +1385,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: 3971765
+  expected_paise: 3482966
   expected_reason: null
   hinglish: false
 - id: Q0174
@@ -1401,7 +1401,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: 3007663
+  expected_paise: 3098260
   expected_reason: null
   hinglish: false
 - id: Q0176
@@ -1417,7 +1417,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: 3003558
+  expected_paise: 1975700
   expected_reason: null
   hinglish: false
 - id: Q0178
@@ -1425,7 +1425,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: 3441027
+  expected_paise: 3406327
   expected_reason: null
   hinglish: false
 - id: Q0179
@@ -1433,7 +1433,7 @@
   bucket: straightforward
   intent: explain_delta
   answerable: true
-  expected_paise: -3923201
+  expected_paise: -4083693
   expected_reason: null
   hinglish: false
 - id: Q0180
@@ -1449,7 +1449,7 @@
   bucket: edge
   intent: explain_settlement
   answerable: true
-  expected_paise: 9915904
+  expected_paise: 9284388
   expected_reason: adjustments must be applied
   hinglish: false
 - id: Q0182
@@ -1457,7 +1457,7 @@
   bucket: edge
   intent: explain_settlement
   answerable: true
-  expected_paise: 2513194
+  expected_paise: 2491868
   expected_reason: adjustments must be applied
   hinglish: false
 - id: Q0183
@@ -1465,7 +1465,7 @@
   bucket: edge
   intent: explain_settlement
   answerable: true
-  expected_paise: 8484518
+  expected_paise: 8411587
   expected_reason: adjustments must be applied
   hinglish: true
 - id: Q0184
@@ -1513,7 +1513,7 @@
   bucket: edge
   intent: explain_settlement
   answerable: true
-  expected_paise: 2614390
+  expected_paise: 2582074
   expected_reason: adjustments must be applied
   hinglish: false
 - id: Q0190
@@ -1545,7 +1545,7 @@
   bucket: edge
   intent: explain_settlement
   answerable: true
-  expected_paise: 9080718
+  expected_paise: 8895135
   expected_reason: adjustments must be applied
   hinglish: false
 - id: Q0194
@@ -1553,7 +1553,7 @@
   bucket: edge
   intent: explain_settlement
   answerable: true
-  expected_paise: 9044237
+  expected_paise: 8528095
   expected_reason: adjustments must be applied
   hinglish: false
 - id: Q0195
@@ -1693,7 +1693,7 @@
   expected_reason: answer is 0, not a refusal
   hinglish: true
 - id: Q0212
-  question: how much was refunded in settlement stl_0031
+  question: how much was refunded in settlement stl_0029
   bucket: edge
   intent: component_breakdown
   answerable: true
@@ -1701,7 +1701,7 @@
   expected_reason: answer is 0, not a refusal
   hinglish: false
 - id: Q0213
-  question: how much was refunded in settlement stl_0034
+  question: how much was refunded in settlement stl_0031
   bucket: edge
   intent: component_breakdown
   answerable: true
@@ -1709,7 +1709,7 @@
   expected_reason: answer is 0, not a refusal
   hinglish: false
 - id: Q0214
-  question: how much was refunded in settlement stl_0035
+  question: how much was refunded in settlement stl_0034
   bucket: edge
   intent: component_breakdown
   answerable: true
@@ -1717,7 +1717,7 @@
   expected_reason: answer is 0, not a refusal
   hinglish: false
 - id: Q0215
-  question: how much was refunded in settlement stl_0045
+  question: how much was refunded in settlement stl_0035
   bucket: edge
   intent: component_breakdown
   answerable: true
@@ -1725,7 +1725,7 @@
   expected_reason: answer is 0, not a refusal
   hinglish: false
 - id: Q0216
-  question: how much was refunded in settlement stl_0069
+  question: how much was refunded in settlement stl_0045
   bucket: edge
   intent: component_breakdown
   answerable: true
@@ -1733,7 +1733,7 @@
   expected_reason: answer is 0, not a refusal
   hinglish: false
 - id: Q0217
-  question: how much was refunded in settlement stl_0093
+  question: how much was refunded in settlement stl_0069
   bucket: edge
   intent: component_breakdown
   answerable: true
@@ -1741,7 +1741,7 @@
   expected_reason: answer is 0, not a refusal
   hinglish: false
 - id: Q0218
-  question: stl_0099 me kitna refund hua
+  question: stl_0093 me kitna refund hua
   bucket: edge
   intent: component_breakdown
   answerable: true
@@ -1749,7 +1749,7 @@
   expected_reason: answer is 0, not a refusal
   hinglish: true
 - id: Q0219
-  question: how much was refunded in settlement stl_0111
+  question: how much was refunded in settlement stl_0099
   bucket: edge
   intent: component_breakdown
   answerable: true
@@ -1757,7 +1757,7 @@
   expected_reason: answer is 0, not a refusal
   hinglish: false
 - id: Q0220
-  question: how much was refunded in settlement stl_0114
+  question: how much was refunded in settlement stl_0111
   bucket: edge
   intent: component_breakdown
   answerable: true
@@ -1769,7 +1769,7 @@
   bucket: edge
   intent: component_breakdown
   answerable: true
-  expected_paise: 163651
+  expected_paise: 154427
   expected_reason: payment window spans a weekend
   hinglish: false
 - id: Q0222
@@ -1785,7 +1785,7 @@
   bucket: edge
   intent: component_breakdown
   answerable: true
-  expected_paise: 114750
+  expected_paise: 111315
   expected_reason: payment window spans a weekend
   hinglish: false
 - id: Q0224
@@ -1793,7 +1793,7 @@
   bucket: edge
   intent: component_breakdown
   answerable: true
-  expected_paise: 140419
+  expected_paise: 140013
   expected_reason: payment window spans a weekend
   hinglish: false
 - id: Q0225
@@ -1817,7 +1817,7 @@
   bucket: edge
   intent: component_breakdown
   answerable: true
-  expected_paise: 198955
+  expected_paise: 185817
   expected_reason: payment window spans a weekend
   hinglish: false
 - id: Q0228
@@ -1849,7 +1849,7 @@
   bucket: edge
   intent: component_breakdown
   answerable: true
-  expected_paise: 110867
+  expected_paise: 107114
   expected_reason: payment window spans a weekend
   hinglish: false
 - id: Q0232
@@ -1865,7 +1865,7 @@
   bucket: edge
   intent: component_breakdown
   answerable: true
-  expected_paise: 163651
+  expected_paise: 154427
   expected_reason: sum of rounded per-payment fees != 2% of gross
   hinglish: false
 - id: Q0234
@@ -1889,7 +1889,7 @@
   bucket: edge
   intent: component_breakdown
   answerable: true
-  expected_paise: 200941
+  expected_paise: 200060
   expected_reason: sum of rounded per-payment fees != 2% of gross
   hinglish: false
 - id: Q0237

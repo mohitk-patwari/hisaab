@@ -7,18 +7,26 @@ pipeline (intent.parse -> engine query -> narrate -> gate.verify), scores
 against the ground truth baked into questions.yaml, prints a report and
 writes eval/report.md.
 
-Ground truth is NOT read from the generator's GroundTruth here — it is baked
-into eval/questions.yaml by eval.gen_questions, so the engine is never scored
+Contract this expects (imported lazily so this module still loads while the
+llm layer is incomplete):
+
+    hisaab.generate.ledger.generate(seed: int) -> (Ledger, GroundTruth)   [ready]
+    hisaab.llm.intent.parse(question: str) -> Intent | None   # Intent has .handler: str
+    hisaab.engine.queries.HANDLERS[intent.handler](ledger, intent.query_params()) -> Explanation
+    hisaab.llm.narrate.narrate(explanation: Explanation) -> str
+
+Ground truth is NOT taken from GroundTruth here — it is baked into
+eval/questions.yaml by eval.gen_questions, so the engine is never scored
 against a key it could also see.
 
-A question counts as "refused" when intent.parse() returns None (-> intent
-"unsupported") or the Explanation comes back resolved == False. The gate's
-leftover numbers are counted separately as UNSUPPORTED NUMBERS.
+A question is "refused" when parse() returns None (mapped to intent
+"unsupported") or the handler returns an Explanation with resolved == False.
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
@@ -38,11 +46,10 @@ def _load_questions(path: str) -> list[dict]:
 
 
 def _run_one(q: dict, ledger) -> QResult:
-    """One question through the full pipeline. A per-question failure is
-    recorded as its exception_reason; only _NOT_READY re-raises so the caller
-    can abort with one clear message."""
-    from hisaab.engine import queries
-    from hisaab.llm.gate import verify
+    """One question through the full pipeline. Never raises for a pipeline
+    that IS ready — a per-question failure is recorded as its exception_reason.
+    Re-raises _NOT_READY so the caller can abort with one clear message."""
+    from hisaab.engine.queries import HANDLERS
     from hisaab.llm.intent import parse
     from hisaab.llm.narrate import narrate
 
@@ -54,22 +61,21 @@ def _run_one(q: dict, ledger) -> QResult:
     got_paise = None
     resolved = False
     exception_reason = None
-    unsupported: list = []
+    unsupported: list[int] = []
     try:
         intent = parse(question)
+        got_intent = intent.handler if intent is not None else "unsupported"
         if intent is None:
-            got_intent = "unsupported"
-            exception_reason = "intent.parse() returned None (question not mapped to a query)"
+            resolved = False
+            exception_reason = "question did not map to a known query"
         else:
-            got_intent = intent.handler
-            explanation = queries.HANDLERS[intent.handler](ledger, intent.query_params())
+            explanation = HANDLERS[intent.handler](ledger, intent.query_params())
             resolved = bool(explanation.resolved)
             got_paise = explanation.total.value_paise
-            _, unsupported = verify(narrate(explanation), explanation)
+            narration = narrate(explanation)
+            unsupported = unsupported_numbers(narration, explanation)
             if not resolved:
                 exception_reason = explanation.exception_reason or "unresolved (no reason given)"
-            elif unsupported:
-                exception_reason = f"gate blocked unsupported number(s): {', '.join(unsupported)}"
     except _NOT_READY:
         raise
     except Exception as exc:  # real per-question bug: record, keep going
@@ -95,12 +101,12 @@ def _not_ready_exit(exc: Exception) -> None:
     msg = (
         "HISAAB EVAL — PIPELINE NOT READY\n\n"
         f"  {type(exc).__name__}: {exc}\n\n"
-        "This command needs the whole pipeline importable:\n\n"
-        "  hisaab.generate.ledger.generate(seed) -> (Ledger, GroundTruth)\n"
-        "  hisaab.llm.intent.parse(question) -> Intent | None\n"
+        "A required module is missing or doesn't match the contract this eval\n"
+        "expects:\n\n"
+        "  hisaab.generate.ledger.generate(seed) -> (Ledger, GroundTruth)   [ready]\n"
+        "  hisaab.llm.intent.parse(question) -> Intent | None   # .handler: str\n"
         "  hisaab.engine.queries.HANDLERS[handler](ledger, params) -> Explanation\n"
         "  hisaab.llm.narrate.narrate(explanation) -> str\n"
-        "  hisaab.llm.gate.verify(narration, explanation) -> (text, violations)\n"
     )
     print(msg)
     REPORT_PATH.write_text(msg, encoding="utf-8")
@@ -108,6 +114,10 @@ def _not_ready_exit(exc: Exception) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    try:  # the ₹ sign and em-dash trip the default Windows console codepage
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     ap = argparse.ArgumentParser(prog="eval.run")
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--questions", default="eval/questions.yaml")
