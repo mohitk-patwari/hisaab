@@ -105,7 +105,9 @@ def parse(question: str) -> Intent | None:
 
 # --- offline deterministic fallback ---------------------------------------
 
-_ID = re.compile(r"\b(?:setl|settlement)[_-]?\w+|\bs\d+\b", re.IGNORECASE)
+# "stl" is the real generator's prefix (hisaab/generate/ledger.py); "setl" is
+# what the hand-written fixtures/demo ledger use. Both need to parse.
+_ID = re.compile(r"\b(?:settlement|setl|stl)[_-]?\w+|\bs\d+\b", re.IGNORECASE)
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
 

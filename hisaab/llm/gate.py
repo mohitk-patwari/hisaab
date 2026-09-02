@@ -15,8 +15,13 @@ from hisaab.domain.models import Explanation
 
 # A number token: optional leading sign / currency mark, then digits with
 # optional thousands commas and decimals. Lookbehind/ahead keep us from matching
-# digits that are part of an identifier like "setl_1" or "utr_9".
-_NUM = re.compile(r"(?<![\w.])-?(?:₹|Rs\.?\s*)?\d[\d,]*(?:\.\d+)?(?![\w])")
+# digits that are part of an identifier like "setl_1" or "utr_9". A comma only
+# counts as thousands-grouping when exactly 3 digits follow it, so a sentence
+# comma right after a bare number (e.g. an exception_reason's "6247711, tax
+# suspect...") isn't swallowed into the figure and misread as ₹6,247,711.
+_NUM = re.compile(
+    r"(?<![\w.])-?(?:₹|Rs\.?\s*)?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\w])"
+)
 
 
 def format_rupees(paise: int) -> str:

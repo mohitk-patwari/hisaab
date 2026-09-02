@@ -10,21 +10,22 @@ Contract this expects (imported lazily so this module still loads while the
 llm layer is incomplete):
 
     hisaab.generate.ledger.generate(seed: int) -> (Ledger, GroundTruth)   [ready]
-    hisaab.llm.parse_intent(question: str) -> Intent   # Intent has .intent: str
-    hisaab.engine.explain(ledger, intent) -> Explanation
-    hisaab.llm.narrate(explanation: Explanation) -> str
+    hisaab.llm.intent.parse(question: str) -> Intent | None   # Intent has .handler: str
+    hisaab.engine.queries.HANDLERS[intent.handler](ledger, intent.query_params()) -> Explanation
+    hisaab.llm.narrate.narrate(explanation: Explanation) -> str
 
 Ground truth is NOT taken from GroundTruth here — it is baked into
 eval/questions.yaml by eval.gen_questions, so the engine is never scored
 against a key it could also see.
 
-A question is "refused" when parse_intent returns intent == "unsupported"
-or explain() returns an Explanation with resolved == False.
+A question is "refused" when parse() returns None (mapped to intent
+"unsupported") or the handler returns an Explanation with resolved == False.
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from pathlib import Path
 
@@ -47,8 +48,9 @@ def _run_one(q: dict, ledger) -> QResult:
     """One question through the full pipeline. Never raises for a pipeline
     that IS ready — a per-question failure is recorded as its exception_reason.
     Re-raises _NOT_READY so the caller can abort with one clear message."""
-    from hisaab.engine import explain
-    from hisaab.llm import narrate, parse_intent
+    from hisaab.engine.queries import HANDLERS
+    from hisaab.llm.intent import parse
+    from hisaab.llm.narrate import narrate
 
     qid = str(q["id"])
     question = str(q["question"])
@@ -60,16 +62,21 @@ def _run_one(q: dict, ledger) -> QResult:
     got_paise = None
     resolved = True
     exception_reason = None
+    unsupported: list[int] = []
     try:
-        intent = parse_intent(question)
-        got_intent = getattr(intent, "intent", None)
-        explanation = explain(ledger, intent)
-        resolved = bool(explanation.resolved)
-        got_paise = explanation.total.value_paise
-        narration = narrate(explanation)
-        unsupported = unsupported_numbers(narration, explanation)
-        if not resolved:
-            exception_reason = explanation.exception_reason or "unresolved (no reason given)"
+        intent = parse(question)
+        got_intent = intent.handler if intent is not None else "unsupported"
+        if intent is None:
+            resolved = False
+            exception_reason = "question did not map to a known query"
+        else:
+            explanation = HANDLERS[intent.handler](ledger, intent.query_params())
+            resolved = bool(explanation.resolved)
+            got_paise = explanation.total.value_paise
+            narration = narrate(explanation)
+            unsupported = unsupported_numbers(narration, explanation)
+            if not resolved:
+                exception_reason = explanation.exception_reason or "unresolved (no reason given)"
     except _NOT_READY:
         raise
     except Exception as exc:  # real per-question bug: record, keep going
@@ -97,12 +104,12 @@ def _not_ready_exit(exc: Exception) -> None:
     msg = (
         "HISAAB EVAL — PIPELINE NOT READY\n\n"
         f"  {type(exc).__name__}: {exc}\n\n"
-        "The llm layer is still being written. This command will pass once\n"
-        "these callables exist and match the contract:\n\n"
+        "A required module is missing or doesn't match the contract this eval\n"
+        "expects:\n\n"
         "  hisaab.generate.ledger.generate(seed) -> (Ledger, GroundTruth)   [ready]\n"
-        "  hisaab.llm.parse_intent(question) -> Intent   # .intent: str\n"
-        "  hisaab.engine.explain(ledger, intent) -> Explanation\n"
-        "  hisaab.llm.narrate(explanation) -> str\n"
+        "  hisaab.llm.intent.parse(question) -> Intent | None   # .handler: str\n"
+        "  hisaab.engine.queries.HANDLERS[handler](ledger, params) -> Explanation\n"
+        "  hisaab.llm.narrate.narrate(explanation) -> str\n"
     )
     print(msg)
     REPORT_PATH.write_text(msg, encoding="utf-8")
@@ -110,6 +117,10 @@ def _not_ready_exit(exc: Exception) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    try:  # the ₹ sign and em-dash trip the default Windows console codepage
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
     ap = argparse.ArgumentParser(prog="eval.run")
     ap.add_argument("--seed", type=int, required=True)
     ap.add_argument("--questions", default="eval/questions.yaml")
