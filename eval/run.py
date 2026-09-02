@@ -32,7 +32,7 @@ from pathlib import Path
 
 import yaml
 
-from eval.metrics import QResult, Report, exit_code, render_report
+from eval.metrics import QResult, Report, exit_code, render_report, unsupported_numbers
 
 _NOT_READY = (ImportError, AttributeError, NotImplementedError)
 REPORT_PATH = Path(__file__).with_name("report.md")

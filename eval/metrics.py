@@ -5,12 +5,14 @@ Rules baked in here, not left to callers:
   - never truncate the exception list: render_report dumps all of them
   - exit_code() is 1 whenever UNSUPPORTED NUMBERS > 0
 
-The UNSUPPORTED NUMBERS themselves come from the production gate
-(hisaab.llm.gate.verify) — run.py hands the violation tokens straight in.
+UNSUPPORTED NUMBERS: every money-shaped token in the narration that no
+TracedValue in the Explanation backs. Same rule as the production gate
+(hisaab.llm.gate), recomputed here for scoring.
 """
 
 from __future__ import annotations
 
+import re
 import statistics
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -89,7 +91,7 @@ class QResult:
     resolved: bool
     exception_reason: str | None
     latency_ms: float
-    unsupported: list = field(default_factory=list)  # gate violation tokens
+    unsupported: list = field(default_factory=list)  # unsupported paise values found in the narration
 
     @property
     def intent_ok(self) -> bool:

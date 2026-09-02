@@ -1,23 +1,23 @@
 HISAAB EVAL — seed 42
 250 settlements · 300 questions
 
-Intent classification      223/300
-Answer numerically correct 191/240 answerable
-Wrong answer               49/240 answerable
+Intent classification      250/300
+Answer numerically correct 217/240 answerable
+Wrong answer               23/240 answerable
 WRONG refusal              0/240 answerable   <- refused a question that had an answer
 UNSUPPORTED NUMBERS         0/300
 Correct refusals            58/60 unanswerable
 Answered the unanswerable   2/60 unanswerable
-Mean latency                0 ms
+Mean latency                1 ms
 
 UNRESOLVED EXCEPTIONS (58):
-  Q0241  "why were my tuesday settlements lower than usual"  -> KeyError: "no settlement 'settlements' in ledger"
+  Q0241  "why were my tuesday settlements lower than usual"  -> question did not map to a known query
   Q0242  "bhai monday ka payout kam kyun aata hai"  -> question did not map to a known query
   Q0243  "why is wednesday always low"  -> question did not map to a known query
   Q0244  "mangalwar wala settlement low kyun hai"  -> question did not map to a known query
   Q0245  "what happened to friday's money"  -> question did not map to a known query
   Q0246  "why did thursday underperform"  -> question did not map to a known query
-  Q0247  "why were my january settlements short"  -> KeyError: "no settlement 'settlements' in ledger"
+  Q0247  "why were my january settlements short"  -> question did not map to a known query
   Q0248  "february me payout kam kyun tha"  -> question did not map to a known query
   Q0249  "why was march weak"  -> question did not map to a known query
   Q0250  "explain the dip in april"  -> question did not map to a known query
@@ -35,7 +35,7 @@ UNRESOLVED EXCEPTIONS (58):
   Q0262  "which day was worst for me"  -> question did not map to a known query
   Q0263  "why am I getting less than before"  -> question did not map to a known query
   Q0264  "settlement kam kyun aaya"  -> question did not map to a known query
-  Q0265  "what's wrong with my recent settlements"  -> KeyError: "no settlement 'settlements' in ledger"
+  Q0265  "what's wrong with my recent settlements"  -> question did not map to a known query
   Q0266  "why do some fridays pay more than others"  -> question did not map to a known query
   Q0267  "explain the weekend gap in my payouts"  -> question did not map to a known query
   Q0268  "why is the start of the month always lower"  -> question did not map to a known query

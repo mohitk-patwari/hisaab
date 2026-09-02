@@ -105,9 +105,9 @@ def parse(question: str) -> Intent | None:
 
 # --- offline deterministic fallback ---------------------------------------
 
-# "stl" is the real generator's prefix (hisaab/generate/ledger.py); "setl" is
-# what the hand-written fixtures/demo ledger use. Both need to parse.
-_ID = re.compile(r"\b(?:settlement|setl|stl)[_-]?\w+|\bs\d+\b", re.IGNORECASE)
+# A settlement id token, with or without a leading "settlement " word:
+# matches stl_0000 (real generator), setl_1 (fixtures/demo), "settlement stl_7", s3.
+_ID = re.compile(r"\b(?:settlement\s+)?((?:se?tl|s)_?\d+)\b", re.IGNORECASE)
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
 
