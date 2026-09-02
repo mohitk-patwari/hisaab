@@ -2,12 +2,18 @@
 
 Money is ALWAYS integer paise. Never float. These models do not change
 without telling both other terminals coding against them.
+
+2026-09-02: unfrozen once to add settlement_id to Payment/Refund/Fee --
+see FAILURES.md "predicted failure mode ... engine window vs generator
+construction". Nullable: a None settlement_id means genuinely unsettled,
+not missing data.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from functools import cached_property
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -40,6 +46,9 @@ class Payment(_Frozen):
     captured_at_utc: datetime
     gross_paise: Paise
     method: str
+    # None = genuinely unsettled (not yet swept into any settlement), not a
+    # data gap. Real Razorpay settlement reports carry this mapping explicitly.
+    settlement_id: str | None = None
 
 
 class Refund(_Frozen):
@@ -47,12 +56,14 @@ class Refund(_Frozen):
     payment_id: str
     created_at_utc: datetime
     amount_paise: Paise
+    settlement_id: str | None = None
 
 
 class Fee(_Frozen):
     payment_id: str
     fee_paise: Paise
     tax_paise: Paise
+    settlement_id: str | None = None
 
 
 AdjustmentKind = Literal[
@@ -154,3 +165,39 @@ class Ledger(BaseModel):
     @property
     def settlements_by_id(self) -> dict[str, Settlement]:
         return {s.settlement_id: s for s in self.settlements}
+
+    # -- settlement_id indexed lookups (cached_property: built once per
+    # ledger instance, not rescanned on every call) --------------------
+
+    @cached_property
+    def _payments_by_settlement_id(self) -> dict[str, list[Payment]]:
+        out: dict[str, list[Payment]] = {}
+        for p in self.payments:
+            if p.settlement_id is not None:
+                out.setdefault(p.settlement_id, []).append(p)
+        return out
+
+    @cached_property
+    def _refunds_by_settlement_id(self) -> dict[str, list[Refund]]:
+        out: dict[str, list[Refund]] = {}
+        for r in self.refunds:
+            if r.settlement_id is not None:
+                out.setdefault(r.settlement_id, []).append(r)
+        return out
+
+    @cached_property
+    def _fees_by_settlement_id(self) -> dict[str, list[Fee]]:
+        out: dict[str, list[Fee]] = {}
+        for f in self.fees:
+            if f.settlement_id is not None:
+                out.setdefault(f.settlement_id, []).append(f)
+        return out
+
+    def payments_for(self, settlement_id: str) -> list[Payment]:
+        return self._payments_by_settlement_id.get(settlement_id, [])
+
+    def refunds_for(self, settlement_id: str) -> list[Refund]:
+        return self._refunds_by_settlement_id.get(settlement_id, [])
+
+    def fees_for(self, settlement_id: str) -> list[Fee]:
+        return self._fees_by_settlement_id.get(settlement_id, [])

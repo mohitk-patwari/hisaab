@@ -87,6 +87,9 @@ class SettlementTruth:
 @dataclass(frozen=True)
 class GroundTruth:
     by_settlement: dict[str, SettlementTruth]
+    # Payments deliberately left with settlement_id=None: genuinely unsettled,
+    # not a bug. See _unsettle_some_payments.
+    unsettled_payment_ids: list[str] = field(default_factory=list)
 
 
 def _pct(amount_paise: int, pct: str) -> int:
@@ -154,13 +157,15 @@ def generate(
                 captured_at_utc=captured_at_utc,
                 gross_paise=gross_paise,
                 method=rng.choice(METHODS),
+                settlement_id=settlement_id,
             ))
             payment_ids.append(payment_id)
             gross_total += gross_paise
 
             fee_paise = _pct(gross_paise, "2")
             tax_paise = _pct(fee_paise, "18")  # GST on the fee
-            fees.append(Fee(payment_id=payment_id, fee_paise=fee_paise, tax_paise=tax_paise))
+            fees.append(Fee(payment_id=payment_id, fee_paise=fee_paise, tax_paise=tax_paise,
+                             settlement_id=settlement_id))
             fee_total += fee_paise
             tax_total += tax_paise
 
@@ -178,6 +183,7 @@ def generate(
                 refunds.append(Refund(
                     refund_id=refund_id, payment_id=payment_id,
                     created_at_utc=created_at_utc, amount_paise=amount_paise,
+                    settlement_id=settlement_id,
                 ))
                 refund_ids.append(refund_id)
                 refund_total += amount_paise
@@ -215,12 +221,83 @@ def generate(
             net_paise=net_paise,
         )
 
+    # Unsettling runs before edge-case injection: it only ever pulls a payment
+    # (rare, ~2%) out of whatever settlement generated it, so by the time an
+    # edge case is layered on top, settlement membership is already final and
+    # the two passes can't fight over the same row.
+    unsettled_ids = _unsettle_some_payments(rng, payments, refunds, fees, settlements, truths)
+
     if inject_edge_cases:
         _inject_edge_cases(payments, refunds, fees, adjustments, settlements, truths)
 
     ledger = Ledger(payments=payments, refunds=refunds, fees=fees,
                      adjustments=adjustments, settlements=settlements)
-    return ledger, GroundTruth(by_settlement=truths)
+    return ledger, GroundTruth(by_settlement=truths, unsettled_payment_ids=unsettled_ids)
+
+
+def _unsettle_some_payments(
+    rng: random.Random, payments: list[Payment], refunds: list[Refund], fees: list[Fee],
+    settlements: list[Settlement], truths: dict[str, SettlementTruth], fraction: float = 0.02,
+) -> list[str]:
+    """Pull ~fraction of settled payments back to settlement_id=None: a real
+    exception category (payment captured, not yet swept into a settlement),
+    not a data gap. Any fee/refund tied to one goes with it, and the
+    settlement it left gets its totals and net recomputed exactly."""
+    fee_by_payment = {f.payment_id: f for f in fees}
+    refunds_by_payment: dict[str, list[Refund]] = {}
+    for r in refunds:
+        refunds_by_payment.setdefault(r.payment_id, []).append(r)
+    settlement_index = {s.settlement_id: i for i, s in enumerate(settlements)}
+
+    chosen = [p for p in payments if p.settlement_id is not None and rng.random() < fraction]
+    chosen_ids = {p.payment_id for p in chosen}
+    if not chosen_ids:
+        return []
+
+    payments[:] = [
+        p.model_copy(update={"settlement_id": None}) if p.payment_id in chosen_ids else p
+        for p in payments
+    ]
+    fees[:] = [
+        f.model_copy(update={"settlement_id": None}) if f.payment_id in chosen_ids else f
+        for f in fees
+    ]
+    unsettled_refund_ids = {
+        r.refund_id for pid in chosen_ids for r in refunds_by_payment.get(pid, [])
+    }
+    refunds[:] = [
+        r.model_copy(update={"settlement_id": None}) if r.refund_id in unsettled_refund_ids else r
+        for r in refunds
+    ]
+
+    by_settlement: dict[str, list[Payment]] = {}
+    for p in chosen:
+        by_settlement.setdefault(p.settlement_id, []).append(p)
+
+    for sid, pulled in by_settlement.items():
+        pulled_ids = {p.payment_id for p in pulled}
+        pulled_refunds = [r for pid in pulled_ids for r in refunds_by_payment.get(pid, [])]
+        old = truths[sid]
+
+        gross = old.gross_total_paise - sum(p.gross_paise for p in pulled)
+        fee = old.fee_total_paise - sum(fee_by_payment[p.payment_id].fee_paise for p in pulled)
+        tax = old.tax_total_paise - sum(fee_by_payment[p.payment_id].tax_paise for p in pulled)
+        refund = old.refund_total_paise - sum(r.amount_paise for r in pulled_refunds)
+        net = gross - fee - tax - refund + old.adjustment_total_paise
+
+        pulled_refund_ids = {r.refund_id for r in pulled_refunds}
+        truths[sid] = replace(
+            old,
+            payment_ids=[pid for pid in old.payment_ids if pid not in pulled_ids],
+            refund_ids=[rid for rid in old.refund_ids if rid not in pulled_refund_ids],
+            gross_total_paise=gross, fee_total_paise=fee, tax_total_paise=tax,
+            refund_total_paise=refund, net_paise=net,
+        )
+        settlements[settlement_index[sid]] = settlements[settlement_index[sid]].model_copy(
+            update={"net_paise": net}
+        )
+
+    return sorted(chosen_ids)
 
 
 # --------------------------------------------------------------------------
@@ -333,12 +410,14 @@ def _inject_edge_cases(
 
     # 1. Zero-net settlement: one payment, fee waived, refunded in full.
     idx = 5
+    idx_sid = settlements[idx].settlement_id
     pay = Payment(payment_id="pay_edge_zero", order_id="order_edge_zero",
                   captured_at_utc=_capture_before(settled_at(idx), 1),
-                  gross_paise=50_000, method="card")
-    fee = Fee(payment_id=pay.payment_id, fee_paise=0, tax_paise=0)
+                  gross_paise=50_000, method="card", settlement_id=idx_sid)
+    fee = Fee(payment_id=pay.payment_id, fee_paise=0, tax_paise=0, settlement_id=idx_sid)
     rfn = Refund(refund_id="rfn_edge_zero", payment_id=pay.payment_id,
-                 created_at_utc=pay.captured_at_utc + timedelta(hours=2), amount_paise=50_000)
+                 created_at_utc=pay.captured_at_utc + timedelta(hours=2), amount_paise=50_000,
+                 settlement_id=idx_sid)
     _replace_settlement(payments, refunds, fees, adjustments, settlements, truths, idx,
                          "zero_net", new_payments=[pay], new_fees=[fee], new_refunds=[rfn])
 
@@ -347,10 +426,11 @@ def _inject_edge_cases(
     idx_old, idx_neg = 3, 10
     old_pay = Payment(payment_id="pay_edge_neg_old", order_id="order_edge_neg_old",
                        captured_at_utc=_capture_before(settled_at(idx_old), 1),
-                       gross_paise=500_000, method="card")
+                       gross_paise=500_000, method="card", settlement_id=settlements[idx_old].settlement_id)
     old_fee_paise = _pct(500_000, "2")
     old_tax_paise = _pct(old_fee_paise, "18")
-    old_fee = Fee(payment_id=old_pay.payment_id, fee_paise=old_fee_paise, tax_paise=old_tax_paise)
+    old_fee = Fee(payment_id=old_pay.payment_id, fee_paise=old_fee_paise, tax_paise=old_tax_paise,
+                  settlement_id=settlements[idx_old].settlement_id)
     payments.append(old_pay)
     fees.append(old_fee)
     _bump(truths, settlements, idx_old, add_gross=500_000, add_fee=old_fee_paise,
@@ -358,13 +438,16 @@ def _inject_edge_cases(
 
     small_pay = Payment(payment_id="pay_edge_neg_small", order_id="order_edge_neg_small",
                          captured_at_utc=_capture_before(settled_at(idx_neg), 1),
-                         gross_paise=100_000, method="upi")
+                         gross_paise=100_000, method="upi", settlement_id=settlements[idx_neg].settlement_id)
     small_fee_paise = _pct(100_000, "2")
     small_tax_paise = _pct(small_fee_paise, "18")
-    small_fee = Fee(payment_id=small_pay.payment_id, fee_paise=small_fee_paise, tax_paise=small_tax_paise)
+    small_fee = Fee(payment_id=small_pay.payment_id, fee_paise=small_fee_paise, tax_paise=small_tax_paise,
+                     settlement_id=settlements[idx_neg].settlement_id)
+    # the refund settles here, in idx_neg -- not in idx_old where the
+    # original payment settled. That's the whole point of the case.
     late_refund = Refund(refund_id="rfn_edge_neg", payment_id=old_pay.payment_id,
                           created_at_utc=settled_at(idx_neg) - timedelta(hours=6),
-                          amount_paise=old_pay.gross_paise)
+                          amount_paise=old_pay.gross_paise, settlement_id=settlements[idx_neg].settlement_id)
     _replace_settlement(payments, refunds, fees, adjustments, settlements, truths, idx_neg,
                          "negative_net", new_payments=[small_pay], new_fees=[small_fee],
                          new_refunds=[late_refund])
@@ -408,10 +491,12 @@ def _inject_edge_cases(
     assert tz_captured_at_utc.date() != tz_captured_at_utc.astimezone(IST).date(), "not a tz straddle"
     assert tz_captured_at_utc.astimezone(IST).date() == ist_capture_date
     tz_pay = Payment(payment_id="pay_edge_tz", order_id="order_edge_tz",
-                      captured_at_utc=tz_captured_at_utc, gross_paise=75_000, method="upi")
+                      captured_at_utc=tz_captured_at_utc, gross_paise=75_000, method="upi",
+                      settlement_id=settlements[idx_tz].settlement_id)
     tz_fee_paise = _pct(75_000, "2")
     tz_tax_paise = _pct(tz_fee_paise, "18")
-    tz_fee = Fee(payment_id=tz_pay.payment_id, fee_paise=tz_fee_paise, tax_paise=tz_tax_paise)
+    tz_fee = Fee(payment_id=tz_pay.payment_id, fee_paise=tz_fee_paise, tax_paise=tz_tax_paise,
+                 settlement_id=settlements[idx_tz].settlement_id)
     payments.append(tz_pay)
     fees.append(tz_fee)
     _bump(truths, settlements, idx_tz, add_gross=75_000, add_fee=tz_fee_paise, add_tax=tz_tax_paise,
@@ -427,6 +512,7 @@ def _inject_edge_cases(
     refunds_by_id = {r.refund_id: r for r in refunds}
     adjustments_by_id = {a.adjustment_id: a for a in adjustments}
 
+    idx_b_sid = settlements[idx_b].settlement_id
     id_map: dict[str, str] = {}
     clone_payments, clone_fees = [], []
     for n, pid in enumerate(a_truth.payment_ids):
@@ -435,12 +521,14 @@ def _inject_edge_cases(
         id_map[pid] = new_id
         clone_payments.append(Payment(payment_id=new_id, order_id=f"order_edge_clone_{n:03d}",
                                        captured_at_utc=src.captured_at_utc, gross_paise=src.gross_paise,
-                                       method=src.method))
+                                       method=src.method, settlement_id=idx_b_sid))
         src_fee = fees_by_id[pid]
-        clone_fees.append(Fee(payment_id=new_id, fee_paise=src_fee.fee_paise, tax_paise=src_fee.tax_paise))
+        clone_fees.append(Fee(payment_id=new_id, fee_paise=src_fee.fee_paise, tax_paise=src_fee.tax_paise,
+                               settlement_id=idx_b_sid))
     clone_refunds = [
         Refund(refund_id=f"rfn_edge_clone_{n:03d}", payment_id=id_map[refunds_by_id[rid].payment_id],
-               created_at_utc=refunds_by_id[rid].created_at_utc, amount_paise=refunds_by_id[rid].amount_paise)
+               created_at_utc=refunds_by_id[rid].created_at_utc, amount_paise=refunds_by_id[rid].amount_paise,
+               settlement_id=idx_b_sid)
         for n, rid in enumerate(a_truth.refund_ids)
     ]
     clone_adjustments = [
@@ -462,17 +550,20 @@ def _inject_edge_cases(
     idx_old2, idx_late = 33, 36
     old_pay2 = Payment(payment_id="pay_edge_late_old", order_id="order_edge_late_old",
                         captured_at_utc=_capture_before(settled_at(idx_old2), 1),
-                        gross_paise=200_000, method="card")
+                        gross_paise=200_000, method="card", settlement_id=settlements[idx_old2].settlement_id)
     old_fee2_paise = _pct(200_000, "2")
     old_tax2_paise = _pct(old_fee2_paise, "18")
-    old_fee2 = Fee(payment_id=old_pay2.payment_id, fee_paise=old_fee2_paise, tax_paise=old_tax2_paise)
+    old_fee2 = Fee(payment_id=old_pay2.payment_id, fee_paise=old_fee2_paise, tax_paise=old_tax2_paise,
+                    settlement_id=settlements[idx_old2].settlement_id)
     payments.append(old_pay2)
     fees.append(old_fee2)
     _bump(truths, settlements, idx_old2, add_gross=200_000, add_fee=old_fee2_paise,
           add_tax=old_tax2_paise, add_payment_ids=[old_pay2.payment_id])
 
+    # lands in idx_late, not idx_old2 -- same late-settling pattern as case 2.
     late_refund2 = Refund(refund_id="rfn_edge_late", payment_id=old_pay2.payment_id,
-                           created_at_utc=settled_at(idx_late) - timedelta(hours=6), amount_paise=120_000)
+                           created_at_utc=settled_at(idx_late) - timedelta(hours=6), amount_paise=120_000,
+                           settlement_id=settlements[idx_late].settlement_id)
     refunds.append(late_refund2)
     _bump(truths, settlements, idx_late, add_refund=120_000,
           add_refund_ids=[late_refund2.refund_id], tag="late_refund")
@@ -487,8 +578,10 @@ def _inject_edge_cases(
     assert (gross_333, fee_333, tax_333) == (33_333, 667, 120), "paise rounding drifted"
     round_pay = Payment(payment_id="pay_edge_round", order_id="order_edge_round",
                          captured_at_utc=_capture_before(settled_at(idx_round), 1),
-                         gross_paise=gross_333, method="card")
-    round_fee = Fee(payment_id=round_pay.payment_id, fee_paise=fee_333, tax_paise=tax_333)
+                         gross_paise=gross_333, method="card",
+                         settlement_id=settlements[idx_round].settlement_id)
+    round_fee = Fee(payment_id=round_pay.payment_id, fee_paise=fee_333, tax_paise=tax_333,
+                     settlement_id=settlements[idx_round].settlement_id)
     payments.append(round_pay)
     fees.append(round_fee)
     _bump(truths, settlements, idx_round, add_gross=gross_333, add_fee=fee_333, add_tax=tax_333,

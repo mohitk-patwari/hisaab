@@ -123,3 +123,40 @@ property of every settlement's capture-time distribution, not a fluke of
 one random draw. UNSUPPORTED NUMBERS at a clean 0/300 on every seed is the
 one genuinely good news number: once the scoring regex bug was fixed, the
 gate has never let an invented figure through in 900 question-runs.
+
+## domain contract unfrozen once — settlement_id FK (2026-09-02)
+
+Fixes the root cause of the window/construction mismatch above, not the
+symptom. Added `settlement_id: str | None` to `Payment`, `Refund`, `Fee`
+(`None` = genuinely unsettled, not missing data) and `Ledger.payments_for` /
+`refunds_for` / `fees_for` (cached indexed lookups — built once via
+`functools.cached_property`, not rescanned per call; verified pydantic's
+`frozen=True` doesn't block `cached_property`, and the cache doesn't affect
+model equality). `hisaab/generate/ledger.py` now stamps `settlement_id` on
+every row at construction, matching the membership its own `GroundTruth`
+already recorded — the same information was already sitting in `truths[
+sid].payment_ids`, just not on the row itself. All 8 edge cases updated to
+stamp it too; the two "late refund" cases (2 and 7) stamp the refund with
+the *later* settlement's id, not the original payment's, which is the
+entire point of those cases.
+
+Also added `_unsettle_some_payments`: ~2% of payments (independent 2%
+draw per payment, so "~2%" not exactly 2%) are pulled back to
+`settlement_id=None` after generation, along with their fee and any refund,
+with the settlement they left recomputed exactly. Runs before edge-case
+injection so the two passes can't collide. `GroundTruth.unsettled_payment_ids`
+carries the list.
+
+Verified at seeds 42/7/1337, with and without `--edge-cases`: identity holds
+for all 250 settlements at every combination (`verify_identity`, still
+recomputing from ledger rows, not trusting GroundTruth's own totals);
+`payments_for`/`refunds_for`/`fees_for` match `GroundTruth` membership
+exactly for all 250 settlements at seed 42 (zero mismatches); null
+`settlement_id` rate is 1.79-1.85% across the three seeds, both modes.
+
+**Not done here (next prompt, per scope):** `hisaab/engine/decompose.py`
+still assigns by date window and ignores the new FK entirely — it doesn't
+yet use it, so the 39.6% WRONG-refusal rate from the eval results above is
+unchanged until decompose() is rewritten to use `payments_for`/`refunds_for`
+/`fees_for` instead of the window. `hisaab/engine/` and `eval/` were not
+touched in this change, as instructed.
