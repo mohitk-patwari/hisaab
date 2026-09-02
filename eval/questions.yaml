@@ -1,0 +1,39 @@
+# Scored eval questions. 5 hand-written stubs; the real set is generated.
+#
+# fields:
+#   id            stable label, shows up in the report
+#   question      plain-English question fed to the pipeline
+#   intent        expected intent-classification label
+#   answerable    false => pipeline is supposed to refuse
+#   expected_paise    integer paise of the correct answer (answerable only)
+#   expected_reason   substring the refusal should mention (unanswerable only)
+
+- id: Q0001
+  question: "why did I only receive 9412 for settlement STL-0001"
+  intent: explain_settlement
+  answerable: true
+  expected_paise: 941200
+
+- id: Q0002
+  question: "how much did fees cost me on settlement STL-0007"
+  intent: fee_breakdown
+  answerable: true
+  expected_paise: 2360
+
+- id: Q0003
+  question: "what was the total of refunds in settlement STL-0012"
+  intent: refund_total
+  answerable: true
+  expected_paise: 150000
+
+- id: Q0004
+  question: "why is tuesday lower"
+  intent: unsupported
+  answerable: false
+  expected_reason: "ambiguous date"
+
+- id: Q0005
+  question: "did my accountant steal from me"
+  intent: unsupported
+  answerable: false
+  expected_reason: "out of scope"
