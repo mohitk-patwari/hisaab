@@ -32,16 +32,16 @@ def _demo_ledger() -> Ledger:
         return datetime(2026, 1, day, hour, 0)
 
     payments = [
-        Payment(payment_id="pay_1", order_id="ord_1", captured_at_utc=dt(10), gross_paise=1_000_00, method="upi"),
-        Payment(payment_id="pay_2", order_id="ord_2", captured_at_utc=dt(10, 14), gross_paise=500_00, method="card"),
-        Payment(payment_id="pay_3", order_id="ord_3", captured_at_utc=dt(12), gross_paise=2_000_00, method="upi"),
+        Payment(payment_id="pay_1", order_id="ord_1", captured_at_utc=dt(10), gross_paise=1_000_00, method="upi", settlement_id="setl_1"),
+        Payment(payment_id="pay_2", order_id="ord_2", captured_at_utc=dt(10, 14), gross_paise=500_00, method="card", settlement_id="setl_1"),
+        Payment(payment_id="pay_3", order_id="ord_3", captured_at_utc=dt(12), gross_paise=2_000_00, method="upi", settlement_id="setl_2"),
     ]
     fees = [
-        Fee(payment_id="pay_1", fee_paise=20_00, tax_paise=3_60),
-        Fee(payment_id="pay_2", fee_paise=10_00, tax_paise=1_80),
-        Fee(payment_id="pay_3", fee_paise=40_00, tax_paise=7_20),
+        Fee(payment_id="pay_1", fee_paise=20_00, tax_paise=3_60, settlement_id="setl_1"),
+        Fee(payment_id="pay_2", fee_paise=10_00, tax_paise=1_80, settlement_id="setl_1"),
+        Fee(payment_id="pay_3", fee_paise=40_00, tax_paise=7_20, settlement_id="setl_2"),
     ]
-    refunds = [Refund(refund_id="rfnd_1", payment_id="pay_1", created_at_utc=dt(10, 16), amount_paise=50_00)]
+    refunds = [Refund(refund_id="rfnd_1", payment_id="pay_1", created_at_utc=dt(10, 16), amount_paise=50_00, settlement_id="setl_1")]
     adjustments = [
         Adjustment(adjustment_id="adj_1", settlement_id="setl_1", kind="reserve_hold", amount_paise=-30_00, note="hold"),
     ]
