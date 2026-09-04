@@ -428,3 +428,46 @@ Baseline is unchanged from the previous entry (offline, seed 42): intent
 wrong-refusal 0/240, correct-refusal 60/60, answered-the-unanswerable 0/60,
 UNSUPPORTED NUMBERS 0/300, `rate_limit_fallbacks` 0/300, `config_errors` 0/300,
 mean latency 1 ms.
+
+## Resolved: swapped Gemini → Groq behind the adapter, zero engine changes (2026-09-03)
+
+**This is the Failure Recovery story, start to finish:**
+
+1. Hardcoded Anthropic `/v1/messages` call, no key ever configured → the whole
+   "LLM at the two ends" design was unmeasured.
+2. Built `hisaab/llm/providers.py` — one `complete(system, user)` entry point
+   over four backends (`gemini` / `anthropic` / `groq` / `offline`), `httpx`
+   only, no SDK. Rate-limit retry + per-request delay + caller-side stub
+   fallback so a run never crashes.
+3. Added a Gemini key. First real run: **every call fell through to the stub**,
+   report said `Rate-limit fallbacks 40/20`. Looked like free-tier throttling.
+4. `curl` showed the truth: **HTTP 404**, not 429 — `models/gemini-2.5-flash`
+   was *retired* ("no longer available to new users … use
+   models/gemini-3.6-flash"). The failure was a stale default model; the single
+   undifferentiated `fallback_count()` **misclassified a permanent 404 as a
+   transient rate limit** for a whole debugging cycle.
+5. Fixed in `providers.py`: default → `gemini-3.6-flash` (overridable via
+   `GEMINI_MODEL`, with a comment that a stale default must never silently break
+   the run again); split error classes — `_Retryable` (429/5xx, retried,
+   `rate_limit_fallbacks`) vs `ConfigError` (other 4xx / empty 200, **not**
+   retried, printed loudly once, `config_errors`); handle gemini-3.6-flash's
+   interleaved reasoning parts (`parts[]` entries with no `text` key).
+6. gemini-3.6-flash then **429'd for real** — its free tier is
+   **20 requests/day**. A 300-question eval is 600 calls; unrunnable on that
+   tier at any pace. Reported, not worked around.
+7. **Resolution: set `HISAAB_LLM_PROVIDER=groq` with
+   `GROQ_MODEL=openai/gpt-oss-120b`.** Because the adapter (step 2) already had
+   a Groq backend wired, this was a `.env` change — **no edit to
+   `hisaab/engine/`, `hisaab/llm/intent.py`, `hisaab/llm/narrate.py`, or
+   `decompose()`**. The entire provider migration — retired model, misclassified
+   error, daily-quota wall, new vendor — was absorbed at one seam.
+
+**Verified on Groq (`--limit 20` smoke, seed 42):** 20/20 intent, 20/20
+numerically correct, 0 rate-limit fallbacks, 0 config-error fallbacks. The LLM
+path runs end to end. A full 300-question / 600-call scored run still needs a
+paid key or higher tier; the offline baseline above stands as the reported
+number.
+
+**The lesson:** every failure in this chain was contained one layer in from the
+engine. The deterministic core never changed, the eval numbers never moved, and
+switching LLM vendor mid-debug cost one line of `.env`.
