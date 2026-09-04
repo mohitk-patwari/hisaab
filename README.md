@@ -3,10 +3,11 @@
 ## 1. The problem
 
 A merchant sees a Razorpay payout land — say **₹1,384.60** for settlement
-`setl_1` — and has no idea how it was built. The dashboard shows a total, not a
-derivation. Hisaab answers the plain-English question *"why did I only receive
-₹1,384.60?"* with the arithmetic spelled out and every figure cited to a source
-row:
+`setl_1`. They can download a settlement report, but working out why that
+specific payout came out the way it did still means reading rows of fees, GST,
+refunds and adjustments by hand. Hisaab answers the plain-English (or Hinglish)
+question *"why did I only receive ₹1,384.60?"* with the arithmetic spelled out
+and every figure cited to a source row:
 
 | line | amount | source |
 |------|-------:|--------|
