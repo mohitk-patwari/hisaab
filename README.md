@@ -75,7 +75,7 @@ python -m eval.gen_questions --seed 42
 python -m eval.run --seed 42 --questions eval/questions.yaml --offline
 
 # 3. run the tests (40, includes the adversarial scoreboard)
-pytest
+python -m pytest
 ```
 
 `python -m eval.run` builds the 250-settlement seed-42 ledger in-process; the
