@@ -6,3 +6,4 @@ data/*
 !data/.gitkeep
 .pytest_cache/
 *.egg-info/
+eval/report.md
